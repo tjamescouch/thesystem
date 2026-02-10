@@ -1,0 +1,99 @@
+# thesystem.yaml — Lima VM template for TheSystem
+# This file is used as a base template. The CLI overrides cpus/memory/disk/mounts/env
+# from thesystem.yaml config before passing to limactl create.
+
+images:
+  - location: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    arch: "x86_64"
+  - location: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 4
+memory: "8GiB"
+disk: "40GiB"
+
+mounts:
+  - location: "~/dev"
+    mountPoint: "/home/{{.User}}.linux/dev"
+    writable: false
+
+provision:
+  # ---- SYSTEM PHASE (root) ----
+  - mode: system
+    script: |
+      LOG_FILE="/var/log/thesystem-provision-system.log"
+      mkdir -p /var/log
+      : > "$LOG_FILE"
+      chmod 0644 "$LOG_FILE"
+      export PS4='+ [$(date -Is)] '
+      exec >>"$LOG_FILE" 2>&1
+      set -eux
+
+      echo "=== SYSTEM PROVISION START $(date -Is) ==="
+
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y software-properties-common ca-certificates curl gnupg
+      add-apt-repository -y universe
+      apt-get update
+
+      # Podman + rootless deps + essentials
+      apt-get install -y \
+        podman uidmap slirp4netns fuse-overlayfs iptables \
+        containernetworking-plugins \
+        git jq unzip bash-completion
+
+      # Node.js 20 LTS via NodeSource
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      apt-get install -y nodejs
+
+      # Passwordless sudo for the login user
+      printf '%s ALL=(ALL) NOPASSWD:ALL\n' '{{.User}}' > /etc/sudoers.d/90-{{.User}}-nopasswd
+      chmod 0440 /etc/sudoers.d/90-{{.User}}-nopasswd
+      systemctl enable --now ssh
+
+      echo "=== SYSTEM PROVISION END $(date -Is) ==="
+
+  # ---- USER PHASE ----
+  - mode: user
+    script: |
+      LOG_DIR="$HOME/.thesystem/logs"
+      mkdir -p "$LOG_DIR"
+      LOG_FILE="$LOG_DIR/provision-user.log"
+      export PS4='+ [$(date -Is)] '
+      exec >>"$LOG_FILE" 2>&1
+      set -eux
+
+      echo "=== USER PROVISION START $(date -Is) ==="
+
+      # Shell prompt
+      mkdir -p ~/.bashrc.d
+      if ! grep -q ".bashrc.d" ~/.bashrc 2>/dev/null; then
+        printf '\nfor f in ~/.bashrc.d/*.sh; do [ -r "$f" ] && . "$f"; done\n' >> ~/.bashrc
+      fi
+      cat >~/.bashrc.d/10-thesystem-prompt.sh <<'PROMPT_EOF'
+      export PROMPT_DIRTRIM=2
+      PS1='\[\e[1;93m\][thesystem]\[\e[0m\] \[\e[1;36m\]\u@\h\[\e[0m\]:\[\e[1;32m\]\w\[\e[0m\]\$ '
+      PROMPT_EOF
+
+      # Create working directories
+      mkdir -p ~/.thesystem/services
+      mkdir -p /tmp/thesystem-agents
+
+      # Set npm global prefix to user-writable location
+      mkdir -p ~/.npm-global/bin
+      npm config set prefix "$HOME/.npm-global"
+      cat >>~/.bashrc.d/10-thesystem-prompt.sh <<'NPM_EOF'
+      export PATH="$HOME/.npm-global/bin:$PATH"
+      NPM_EOF
+      export PATH="$HOME/.npm-global/bin:$PATH"
+
+      # Mark provisioning complete — heavy installs happen at first service start
+      touch ~/.thesystem/.provisioned
+
+      echo "=== USER PROVISION END $(date -Is) ==="
+
+ssh:
+  localPort: 0
+firmware:
+  legacyBIOS: false

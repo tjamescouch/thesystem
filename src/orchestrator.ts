@@ -1,161 +1,310 @@
-import { spawn, ChildProcess } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as YAML from 'yaml';
 import { SystemConfig, ComponentStatus } from './types';
 
-interface ManagedComponent {
-  name: string;
-  command: string;
-  args: string[];
-  port: number;
-  process: ChildProcess | null;
-  status: ComponentStatus;
-}
+const exec = promisify(execFile);
+
+const VM_NAME = 'thesystem';
 
 export class Orchestrator {
-  private components: Map<string, ManagedComponent> = new Map();
-  private shutdownInProgress = false;
+  private config: SystemConfig | null = null;
 
-  buildComponentList(config: SystemConfig): void {
-    this.components.set('agentchat-server', {
-      name: 'agentchat-server',
-      command: 'npx',
-      args: ['agentchat-server', '--port', String(config.server.port)],
-      port: config.server.port,
-      process: null,
-      status: {
-        name: 'agentchat-server',
-        version: '0.1.0',
-        port: config.server.port,
-        pid: null,
-        status: 'stopped',
-        restarts: 0,
-      },
-    });
+  private async limactl(args: string[], timeout = 300000): Promise<string> {
+    const { stdout } = await exec('limactl', args, { timeout });
+    return stdout.trim();
+  }
 
-    this.components.set('agentctl-swarm', {
-      name: 'agentctl-swarm',
-      command: 'npx',
-      args: ['agentctl-swarm', 'start', '--count', String(config.swarm.agents)],
-      port: 0,
-      process: null,
-      status: {
-        name: 'agentctl-swarm',
-        version: '0.1.0',
-        port: 0,
-        pid: null,
-        status: 'stopped',
-        restarts: 0,
-      },
-    });
+  private async shell(command: string, timeout = 30000): Promise<string> {
+    // Write command to a temp script, execute it, clean up
+    const scriptName = `.thesystem-cmd-${Date.now()}.sh`;
+    const script = `#!/bin/bash\nexport PATH="$HOME/.npm-global/bin:$PATH"\n${command}\n`;
 
-    this.components.set('agentchat-dashboard', {
-      name: 'agentchat-dashboard',
-      command: 'npx',
-      args: ['agentchat-dashboard', '--port', String(config.dashboard.port)],
-      port: config.dashboard.port,
-      process: null,
-      status: {
-        name: 'agentchat-dashboard',
-        version: '0.1.0',
-        port: config.dashboard.port,
-        pid: null,
-        status: 'stopped',
-        restarts: 0,
-      },
-    });
+    // Write script via limactl shell (simple echo, no backgrounding)
+    await exec('limactl', ['shell', '--workdir', '/home', VM_NAME,
+      'bash', '-c', `cat > /tmp/${scriptName} << 'THESYSTEM_EOF'\n${script}THESYSTEM_EOF`
+    ], { timeout: 10000 });
+
+    // Execute and capture output
+    const { stdout } = await exec('limactl', ['shell', '--workdir', '/home', VM_NAME,
+      'bash', `/tmp/${scriptName}`
+    ], { timeout });
+
+    // Cleanup
+    exec('limactl', ['shell', '--workdir', '/home', VM_NAME,
+      'rm', '-f', `/tmp/${scriptName}`
+    ]).catch(() => {});
+
+    return stdout.trim();
+  }
+
+  async isVmRunning(): Promise<boolean> {
+    try {
+      const output = await this.limactl(['list', '--json']);
+      const lines = output.split('\n').filter(Boolean);
+      for (const line of lines) {
+        const vm = JSON.parse(line);
+        if (vm.name === VM_NAME && vm.status === 'Running') return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  async isVmCreated(): Promise<boolean> {
+    try {
+      const output = await this.limactl(['list', '--json']);
+      const lines = output.split('\n').filter(Boolean);
+      for (const line of lines) {
+        const vm = JSON.parse(line);
+        if (vm.name === VM_NAME) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  generateLimaYaml(config: SystemConfig): string {
+    const templatePath = process.env.THESYSTEM_LIMA_TEMPLATE
+      || path.join(__dirname, '..', 'lima', 'thesystem.yaml');
+
+    if (!fs.existsSync(templatePath)) {
+      throw new Error(`Lima template not found at ${templatePath}`);
+    }
+
+    const template = fs.readFileSync(templatePath, 'utf-8');
+    const doc = YAML.parse(template);
+
+    doc.cpus = config.vm.cpus;
+    doc.memory = config.vm.memory;
+    doc.disk = config.vm.disk;
+
+    if (doc.mounts && doc.mounts[0]) {
+      doc.mounts[0].location = config.vm.mount;
+    }
+
+    // Port forwards for server mode
+    if (config.mode === 'server') {
+      doc.portForwards = [
+        { guestPort: config.server.port, hostPort: config.server.port },
+        { guestPort: config.server.dashboard, hostPort: config.server.dashboard },
+      ];
+    }
+
+    // Pass config as env vars for provisioning scripts
+    doc.env = {
+      THESYSTEM_MODE: config.mode,
+      THESYSTEM_SERVER_PORT: String(config.server.port),
+      THESYSTEM_DASHBOARD_PORT: String(config.server.dashboard),
+      THESYSTEM_ALLOWLIST: String(config.server.allowlist),
+      THESYSTEM_REMOTE: config.client.remote,
+      THESYSTEM_SWARM_AGENTS: String(config.swarm.agents),
+      THESYSTEM_SWARM_BACKEND: config.swarm.backend,
+      THESYSTEM_CHANNELS: config.channels.join(','),
+    };
+
+    return YAML.stringify(doc, { lineWidth: 0 });
   }
 
   async start(config: SystemConfig): Promise<void> {
-    this.buildComponentList(config);
-    const bootOrder = ['agentchat-server', 'agentctl-swarm', 'agentchat-dashboard'];
+    this.config = config;
+    const running = await this.isVmRunning();
 
-    for (const name of bootOrder) {
-      const component = this.components.get(name);
-      if (!component) continue;
-
-      console.log(`[thesystem] Starting ${name}...`);
-      await this.startComponent(component);
-      console.log(`[thesystem] ${name} started (PID: ${component.status.pid})`);
+    if (running) {
+      console.log(`[thesystem] VM "${VM_NAME}" already running.`);
+      console.log('[thesystem] Starting services...');
+      await this.startServices(config);
+      return;
     }
 
-    console.log('[thesystem] All components started.');
+    const created = await this.isVmCreated();
+
+    if (created) {
+      console.log(`[thesystem] Starting VM "${VM_NAME}"...`);
+      await this.limactl(['start', VM_NAME], 600000);
+    } else {
+      console.log(`[thesystem] Creating VM "${VM_NAME}"...`);
+      console.log('[thesystem] First run — this will take a few minutes.');
+
+      const yamlContent = this.generateLimaYaml(config);
+      const tmpYaml = path.join(process.env.TMPDIR || '/tmp', `thesystem-${Date.now()}.yaml`);
+      fs.writeFileSync(tmpYaml, yamlContent);
+
+      try {
+        await this.limactl(['create', '--name', VM_NAME, tmpYaml], 600000);
+        await this.limactl(['start', VM_NAME], 600000);
+      } finally {
+        fs.unlinkSync(tmpYaml);
+      }
+    }
+
+    console.log('[thesystem] VM running. Starting services...');
+    await this.startServices(config);
   }
 
-  private async startComponent(component: ManagedComponent): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(component.command, component.args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: false,
-      });
+  private async installIfNeeded(): Promise<void> {
+    try {
+      await this.shell('which agentchat', 5000);
+      return; // Already installed
+    } catch {
+      // Need to install
+    }
 
-      component.process = child;
-      component.status.pid = child.pid || null;
-      component.status.status = 'running';
+    console.log('[thesystem] Installing agentchat (first run)...');
+    await this.shell(
+      'npm install -g @tjamescouch/agentchat',
+      300000
+    );
 
-      child.stdout?.on('data', (data: Buffer) => {
-        const lines = data.toString().trim().split('\n');
-        for (const line of lines) {
-          console.log(`[${component.name}] ${line}`);
-        }
-      });
+    console.log('[thesystem] Cloning and building dashboard...');
+    await this.shell(
+      'git clone https://github.com/tjamescouch/agentchat-dashboard.git ~/.thesystem/services/dashboard',
+      120000
+    );
+    await this.shell(
+      'cd ~/.thesystem/services/dashboard/server && npm install && npx tsc',
+      120000
+    );
+    await this.shell(
+      'cd ~/.thesystem/services/dashboard/web && npm install && npm run build',
+      120000
+    );
+    console.log('[thesystem] Installation complete.');
+  }
 
-      child.stderr?.on('data', (data: Buffer) => {
-        const lines = data.toString().trim().split('\n');
-        for (const line of lines) {
-          console.error(`[${component.name}] ${line}`);
-        }
-      });
+  private async startServices(config: SystemConfig): Promise<void> {
+    await this.installIfNeeded();
 
-      child.on('exit', (code) => {
-        component.status.status = 'stopped';
-        component.status.pid = null;
-        if (!this.shutdownInProgress) {
-          console.log(`[thesystem] ${component.name} exited with code ${code}`);
-          if (component.status.restarts < 5) {
-            component.status.restarts++;
-            const delay = Math.min(1000 * Math.pow(2, component.status.restarts), 30000);
-            console.log(`[thesystem] Restarting ${component.name} in ${delay}ms...`);
-            setTimeout(() => this.startComponent(component), delay);
-          }
-        }
-      });
+    // Kill any leftover processes from previous runs
+    await this.shell('pkill -f "agentchat serve" 2>/dev/null || true; pkill -f "dashboard/server" 2>/dev/null || true; sleep 1');
 
-      // Give it a moment to start
-      setTimeout(resolve, 1000);
-    });
+    if (config.mode === 'server') {
+      console.log('[thesystem] Starting agentchat-server...');
+      await this.daemonize(
+        `agentchat serve --port ${config.server.port} --host 0.0.0.0`,
+        '/tmp/agentchat-server.log'
+      );
+      await this.waitForPort(config.server.port, 30000);
+
+      console.log('[thesystem] Starting agentchat-dashboard...');
+      await this.daemonize(
+        `cd ~/.thesystem/services/dashboard/server && AGENTCHAT_WS_URL=ws://localhost:${config.server.port} PORT=${config.server.dashboard} node dist/index.js`,
+        '/tmp/agentchat-dashboard.log'
+      );
+      await this.waitForPort(config.server.dashboard);
+    }
+  }
+
+  private async daemonize(command: string, logFile: string): Promise<void> {
+    // Use setsid to create a new session, close all inherited FDs,
+    // and redirect stdin from /dev/null so the SSH session can exit cleanly.
+    const wrapper = `setsid bash -c 'exec > ${logFile} 2>&1 < /dev/null; ${command}' &`;
+    await this.shell(wrapper);
+    // Brief pause to let the process start
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  private async waitForPort(port: number, timeoutMs = 15000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        // Use host-side check since ports are forwarded
+        await exec('curl', ['-s', '-o', '/dev/null', '-w', '', `http://localhost:${port}`], { timeout: 3000 });
+        return;
+      } catch {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    console.log(`[thesystem] Warning: port ${port} not ready after ${timeoutMs}ms`);
   }
 
   async stop(): Promise<void> {
-    this.shutdownInProgress = true;
-    const stopOrder = ['agentchat-dashboard', 'agentctl-swarm', 'agentchat-server'];
-
-    for (const name of stopOrder) {
-      const component = this.components.get(name);
-      if (!component?.process) continue;
-
-      console.log(`[thesystem] Stopping ${name}...`);
-      component.process.kill('SIGTERM');
-
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          component.process?.kill('SIGKILL');
-          resolve();
-        }, 5000);
-
-        component.process?.on('exit', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-      });
-
-      component.status.status = 'stopped';
-      component.status.pid = null;
-      console.log(`[thesystem] ${name} stopped.`);
+    const running = await this.isVmRunning();
+    if (!running) {
+      console.log(`[thesystem] VM "${VM_NAME}" is not running.`);
+      return;
     }
 
-    console.log('[thesystem] All components stopped.');
+    console.log('[thesystem] Stopping services...');
+    const stopPatterns = [
+      { name: 'agentctl-swarm', grep: 'agentctl-swarm' },
+      { name: 'agentchat-dashboard', grep: 'dashboard/server' },
+      { name: 'agentchat-server', grep: 'agentchat serve' },
+    ];
+    for (const proc of stopPatterns) {
+      try {
+        await this.shell(`pkill -f "${proc.grep}" 2>/dev/null || true`);
+        console.log(`[thesystem] Stopped ${proc.name}.`);
+      } catch {
+        // May not be running
+      }
+    }
+
+    console.log(`[thesystem] Stopping VM...`);
+    await this.limactl(['stop', VM_NAME], 60000);
+    console.log('[thesystem] Stopped.');
   }
 
-  getStatus(): ComponentStatus[] {
-    return Array.from(this.components.values()).map((c) => c.status);
+  async destroy(): Promise<void> {
+    const created = await this.isVmCreated();
+    if (!created) {
+      console.log(`[thesystem] VM "${VM_NAME}" does not exist.`);
+      return;
+    }
+
+    const running = await this.isVmRunning();
+    if (running) {
+      console.log('[thesystem] Stopping VM first...');
+      await this.limactl(['stop', VM_NAME], 60000);
+    }
+
+    console.log(`[thesystem] Deleting VM "${VM_NAME}"...`);
+    await this.limactl(['delete', VM_NAME], 60000);
+    console.log('[thesystem] Destroyed. Run "thesystem start" to rebuild.');
+  }
+
+  async getStatus(): Promise<ComponentStatus[]> {
+    const running = await this.isVmRunning();
+    if (!running) {
+      return [{ name: 'vm', version: '-', port: null, pid: null, status: 'stopped', restarts: 0 }];
+    }
+
+    const components: ComponentStatus[] = [
+      { name: 'vm', version: 'Ubuntu 24.04', port: null, pid: null, status: 'running', restarts: 0 },
+    ];
+
+    const services = [
+      { name: 'agentchat-server', grep: 'agentchat serve' },
+      { name: 'agentchat-dashboard', grep: 'dashboard/server' },
+      { name: 'agentctl-swarm', grep: 'agentctl-swarm' },
+    ];
+
+    for (const svc of services) {
+      try {
+        const pid = await this.shell(`pgrep -f "${svc.grep}" | head -1`);
+        const port = svc.name === 'agentchat-server' ? (this.config?.server.port ?? 6667)
+          : svc.name === 'agentchat-dashboard' ? (this.config?.server.dashboard ?? 3000)
+          : null;
+
+        components.push({
+          name: svc.name,
+          version: '-',
+          port,
+          pid: pid ? parseInt(pid, 10) : null,
+          status: pid ? 'running' : 'stopped',
+          restarts: 0,
+        });
+      } catch {
+        components.push({
+          name: svc.name, version: '-', port: null, pid: null, status: 'stopped', restarts: 0,
+        });
+      }
+    }
+
+    return components;
   }
 }

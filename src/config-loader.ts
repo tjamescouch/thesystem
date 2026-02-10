@@ -62,11 +62,15 @@ export function loadConfig(cwd?: string): SystemConfig {
 }
 
 export function generateDefault(): string {
-  return YAML.stringify(DEFAULT_CONFIG);
+  return YAML.stringify(DEFAULT_CONFIG, { lineWidth: 0 });
 }
 
 export function writeDefaultConfig(dir: string): string {
   const configPath = path.join(dir, CONFIG_FILENAME);
-  fs.writeFileSync(configPath, generateDefault(), 'utf-8');
+  const header = `# TheSystem configuration
+# Mode: "server" runs a full node (router + workers), "client" connects to a remote router
+# Docs: https://github.com/tjamescouch/TheSystem#configuration
+`;
+  fs.writeFileSync(configPath, header + generateDefault(), 'utf-8');
   return configPath;
 }

@@ -1,11 +1,15 @@
 {
   "name": "thesystem",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Install it and you have a dev shop",
   "main": "dist/index.js",
   "bin": {
     "thesystem": "dist/cli.js"
   },
+  "files": [
+    "dist/**/*",
+    "lima/**/*"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli.js start",
@@ -15,7 +19,7 @@
     "type": "git",
     "url": "git+https://github.com/tjamescouch/TheSystem.git"
   },
-  "keywords": ["agents", "agentchat", "devshop", "orchestrator"],
+  "keywords": ["agents", "agentchat", "devshop", "orchestrator", "lima", "vm"],
   "author": "James Couch",
   "license": "MIT",
   "type": "commonjs",

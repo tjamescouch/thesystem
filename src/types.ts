@@ -1,23 +1,22 @@
-export interface ComponentConfig {
-  name: string;
-  package: string;
-  port: number;
-  command: string;
-  args: string[];
-  healthEndpoint?: string;
-  dependsOn: string[];
-}
-
 export interface SystemConfig {
+  mode: 'server' | 'client';
   server: {
     port: number;
+    dashboard: number;
+    allowlist: boolean;
+  };
+  client: {
+    remote: string;
   };
   swarm: {
     agents: number;
     backend: string;
   };
-  dashboard: {
-    port: number;
+  vm: {
+    cpus: number;
+    memory: string;
+    disk: string;
+    mount: string;
   };
   channels: string[];
 }
@@ -32,28 +31,37 @@ export interface CompatibilityMatrix {
 export interface ComponentStatus {
   name: string;
   version: string;
-  port: number;
+  port: number | null;
   pid: number | null;
   status: 'running' | 'stopped' | 'degraded' | 'starting';
   restarts: number;
 }
 
 export const DEFAULT_CONFIG: SystemConfig = {
+  mode: 'server',
   server: {
     port: 6667,
+    dashboard: 3000,
+    allowlist: true,
+  },
+  client: {
+    remote: 'wss://agentchat-server.fly.dev',
   },
   swarm: {
     agents: 2,
     backend: 'claude',
   },
-  dashboard: {
-    port: 3000,
+  vm: {
+    cpus: 4,
+    memory: '8GiB',
+    disk: '40GiB',
+    mount: '~/dev',
   },
   channels: ['#general', '#agents'],
 };
 
 export const COMPATIBILITY_MATRIX: CompatibilityMatrix = {
-  'agentchat': { min: '0.1.0', max: '1.0.0' },
+  '@tjamescouch/agentchat': { min: '0.22.0', max: '1.0.0' },
   'agentctl-swarm': { min: '0.1.0', max: '1.0.0' },
   'agentchat-dashboard': { min: '0.1.0', max: '1.0.0' },
 };
