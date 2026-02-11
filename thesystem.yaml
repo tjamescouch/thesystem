@@ -1,0 +1,21 @@
+# TheSystem configuration
+# Mode: "server" runs a full node (router + workers), "client" connects to a remote router
+# Docs: https://github.com/tjamescouch/TheSystem#configuration
+mode: client
+server:
+  port: 6667
+  dashboard: 3000
+  allowlist: true
+client:
+  remote: wss://agentchat-server.fly.dev
+swarm:
+  agents: 2
+  backend: claude
+vm:
+  cpus: 4
+  memory: 8GiB
+  disk: 40GiB
+  mount: ~/dev
+channels:
+  - "#general"
+  - "#agents"

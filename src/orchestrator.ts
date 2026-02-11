@@ -146,41 +146,78 @@ export class Orchestrator {
     await this.startServices(config);
   }
 
-  private async installIfNeeded(): Promise<void> {
+  private async installIfNeeded(config: SystemConfig): Promise<void> {
+    // Always need agentchat
     try {
       await this.shell('which agentchat', 5000);
-      return; // Already installed
     } catch {
-      // Need to install
+      console.log('[thesystem] Installing agentchat (first run)...');
+      await this.shell(
+        'npm install -g @tjamescouch/agentchat',
+        300000
+      );
     }
 
-    console.log('[thesystem] Installing agentchat (first run)...');
-    await this.shell(
-      'npm install -g @tjamescouch/agentchat',
-      300000
-    );
+    // Server mode: also need the dashboard
+    if (config.mode === 'server') {
+      try {
+        await this.shell('test -d ~/.thesystem/services/dashboard', 5000);
+      } catch {
+        console.log('[thesystem] Cloning and building dashboard...');
+        await this.shell(
+          'git clone https://github.com/tjamescouch/agentchat-dashboard.git ~/.thesystem/services/dashboard',
+          120000
+        );
+        await this.shell(
+          'cd ~/.thesystem/services/dashboard/server && npm install && npx tsc',
+          120000
+        );
+        await this.shell(
+          'cd ~/.thesystem/services/dashboard/web && npm install && npm run build',
+          120000
+        );
+      }
+    }
 
-    console.log('[thesystem] Cloning and building dashboard...');
-    await this.shell(
-      'git clone https://github.com/tjamescouch/agentchat-dashboard.git ~/.thesystem/services/dashboard',
-      120000
-    );
-    await this.shell(
-      'cd ~/.thesystem/services/dashboard/server && npm install && npx tsc',
-      120000
-    );
-    await this.shell(
-      'cd ~/.thesystem/services/dashboard/web && npm install && npm run build',
-      120000
-    );
+    // Both modes: need theswarm for spawning agents
+    try {
+      await this.shell('which agentctl', 5000);
+    } catch {
+      console.log('[thesystem] Installing theswarm...');
+      // Install from host-mounted dev directory if available, else clone
+      try {
+        await this.shell('test -d ~/dev/claude/agent-006/agentctl-swarm', 5000);
+        await this.shell(
+          'cd ~/dev/claude/agent-006/agentctl-swarm && npm install -g .',
+          120000
+        );
+      } catch {
+        await this.shell(
+          'git clone https://github.com/tjamescouch/agentctl-swarm.git ~/.thesystem/services/theswarm && cd ~/.thesystem/services/theswarm && npm install -g .',
+          120000
+        );
+      }
+    }
+
+    // Both modes: need claude CLI for agents
+    try {
+      await this.shell('which claude', 5000);
+    } catch {
+      console.log('[thesystem] Installing Claude Code CLI...');
+      await this.shell(
+        'npm install -g @anthropic-ai/claude-code',
+        300000
+      );
+    }
+
     console.log('[thesystem] Installation complete.');
   }
 
   private async startServices(config: SystemConfig): Promise<void> {
-    await this.installIfNeeded();
+    await this.installIfNeeded(config);
 
     // Kill any leftover processes from previous runs
-    await this.shell('pkill -f "agentchat serve" 2>/dev/null || true; pkill -f "dashboard/server" 2>/dev/null || true; sleep 1');
+    await this.shell('pkill -f "agentchat serve" 2>/dev/null || true; pkill -f "dashboard/server" 2>/dev/null || true; pkill -f "agentctl start" 2>/dev/null || true; sleep 1');
 
     if (config.mode === 'server') {
       console.log('[thesystem] Starting agentchat-server...');
@@ -197,6 +234,18 @@ export class Orchestrator {
       );
       await this.waitForPort(config.server.dashboard);
     }
+
+    // Start TheSwarm (both modes)
+    const serverUrl = config.mode === 'server'
+      ? `ws://localhost:${config.server.port}`
+      : config.client.remote;
+    const channels = config.channels.join(',');
+
+    console.log(`[thesystem] Starting theswarm (${config.swarm.agents} agents)...`);
+    await this.daemonize(
+      `agentctl start --server ${serverUrl} --count ${config.swarm.agents} --channels ${channels} --role ${config.swarm.backend}`,
+      '/tmp/agentctl-swarm.log'
+    );
   }
 
   private async daemonize(command: string, logFile: string): Promise<void> {
@@ -231,7 +280,7 @@ export class Orchestrator {
 
     console.log('[thesystem] Stopping services...');
     const stopPatterns = [
-      { name: 'agentctl-swarm', grep: 'agentctl-swarm' },
+      { name: 'theswarm', grep: 'agentctl start' },
       { name: 'agentchat-dashboard', grep: 'dashboard/server' },
       { name: 'agentchat-server', grep: 'agentchat serve' },
     ];
@@ -280,7 +329,7 @@ export class Orchestrator {
     const services = [
       { name: 'agentchat-server', grep: 'agentchat serve' },
       { name: 'agentchat-dashboard', grep: 'dashboard/server' },
-      { name: 'agentctl-swarm', grep: 'agentctl-swarm' },
+      { name: 'theswarm', grep: 'agentctl start' },
     ];
 
     for (const svc of services) {
