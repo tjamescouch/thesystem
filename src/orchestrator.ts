@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as YAML from 'yaml';
 import { SystemConfig, ComponentStatus } from './types';
+import { createSecretStore } from './secret-store';
 
 const exec = promisify(execFile);
 
@@ -281,6 +282,25 @@ export class Orchestrator {
     }
 
     // Start TheSwarm (both modes)
+    // Retrieve API credentials from secret store (keychain/libsecret/aes-file)
+    const secrets = await createSecretStore();
+    let token = await secrets.get('oauth-token');
+    if (!token) {
+      // Fallback: check environment variables
+      token = process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY || null;
+    }
+    if (!token) {
+      console.error('[thesystem] ERROR: No API credentials found.');
+      console.error('[thesystem] Store credentials: thesystem config set-secret oauth-token <your-token>');
+      console.error('[thesystem] Or set env var: export ANTHROPIC_API_KEY=sk-ant-...');
+      console.error('[thesystem] Skipping swarm startup. Server and dashboard are still running.');
+      return;
+    }
+
+    // Write token to a tmpfs file inside the VM, readable only by agent user
+    const tokenVar = token.startsWith('sk-ant-') ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN';
+    await this.shell(`mkdir -p /run/thesystem && echo -n '${token.replace(/'/g, "'\\''")}' > /run/thesystem/agent-token && chmod 600 /run/thesystem/agent-token`);
+
     const serverUrl = config.mode === 'server'
       ? `ws://localhost:${config.server.port}`
       : config.client.remote;
@@ -288,7 +308,7 @@ export class Orchestrator {
 
     console.log(`[thesystem] Starting theswarm (${config.swarm.agents} agents)...`);
     await this.daemonize(
-      `agentctl start --server ${serverUrl} --count ${config.swarm.agents} --channels ${channels} --role ${config.swarm.backend}`,
+      `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentctl start --server ${serverUrl} --count ${config.swarm.agents} --channels ${channels} --role ${config.swarm.backend}`,
       '/tmp/agentctl-swarm.log'
     );
   }
