@@ -25,11 +25,15 @@ Usage:
   thesystem doctor            Check prerequisites and health
   thesystem config            Show resolved configuration
   thesystem logs [svc]        Tail logs from a service (server, dashboard, swarm)
-  thesystem daemon install    Install launchd agent (auto-start on login)
-  thesystem daemon uninstall  Remove launchd agent
-  thesystem daemon status     Show daemon status
-  thesystem version           Show version
-  thesystem help              Show this message
+  thesystem secrets set <k> <v> Store a secret in OS keychain
+  thesystem secrets get <k>     Retrieve a secret (masked)
+  thesystem secrets delete <k>  Remove a secret
+  thesystem secrets list        Show known secret key names
+  thesystem daemon install      Install launchd agent (auto-start on login)
+  thesystem daemon uninstall    Remove launchd agent
+  thesystem daemon status       Show daemon status
+  thesystem version             Show version
+  thesystem help                Show this message
 `);
 }
 
@@ -337,6 +341,50 @@ ${channels}
       } else {
         console.error(`Unknown daemon subcommand "${subcommand}". Options: install, uninstall, status`);
         process.exit(1);
+      }
+      break;
+    }
+
+    case 'secrets': {
+      const { createSecretStore } = await import('./secret-store');
+      const secrets = await createSecretStore();
+      const sub = args[1] || 'help';
+
+      if (sub === 'set' && args[2] && args[3]) {
+        await secrets.set(args[2], args[3]);
+        console.log(`[thesystem] Secret '${args[2]}' stored.`);
+      } else if (sub === 'get' && args[2]) {
+        const value = await secrets.get(args[2]);
+        if (value) {
+          // Show only first/last 4 chars for safety
+          const masked = value.length > 12
+            ? `${value.slice(0, 4)}...${value.slice(-4)}`
+            : '****';
+          console.log(`[thesystem] ${args[2]}: ${masked} (${value.length} chars)`);
+        } else {
+          console.log(`[thesystem] Secret '${args[2]}' not found.`);
+        }
+      } else if (sub === 'delete' && args[2]) {
+        await secrets.delete(args[2]);
+        console.log(`[thesystem] Secret '${args[2]}' deleted.`);
+      } else if (sub === 'list') {
+        console.log('[thesystem] Known secret keys:');
+        console.log('  oauth-token       Claude Code OAuth token');
+        console.log('  anthropic-api-key  Anthropic API key');
+        console.log('  gh-token          GitHub personal access token');
+        console.log('  moltx-api-key     MoltX social media API key');
+        console.log('  moltbook-api-key  Moltbook API key');
+        console.log('\nUse: thesystem secrets get <key-name>');
+      } else {
+        console.log(`
+thesystem secrets — manage credentials securely
+
+Usage:
+  thesystem secrets set <key> <value>   Store a secret
+  thesystem secrets get <key>           Retrieve a secret (masked output)
+  thesystem secrets delete <key>        Remove a secret
+  thesystem secrets list                Show known secret key names
+`);
       }
       break;
     }
