@@ -64,7 +64,7 @@ export interface TextSegment {
 export type Marker = SimpleMarker | MarkerStart | MarkerEnd | FnCallMarker | KVMarker;
 export type Segment = TextSegment | Marker;
 
-export type MarkerHandler = (marker: Marker, context?: MarkerContext) => void | Promise<void>;
+export type MarkerHandler = (marker: Marker, context?: MarkerContext) => unknown;
 
 export interface MarkerContext {
   agentId?: string;
@@ -323,6 +323,8 @@ export class MarkerRouter {
   /**
    * Process text: parse it, route all markers, return clean text.
    * This is the main entry point for processing model output.
+   * Final output goes through strip() as a safety net — agentseenoevil
+   * catches anything the parser missed (malformed markers, etc.).
    */
   async process(text: string, context?: MarkerContext): Promise<string> {
     const segments = parse(text);
@@ -333,8 +335,8 @@ export class MarkerRouter {
       await this.route(marker, context);
     }
 
-    // Return clean text (markers stripped)
-    return textOnly(segments);
+    // Return clean text: textOnly for parsed markers, then strip() as safety net
+    return strip(textOnly(segments));
   }
 }
 

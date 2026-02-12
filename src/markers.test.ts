@@ -177,7 +177,7 @@ test('router.process returns clean text and routes markers', async () => {
   const markers: string[] = [];
   router.on('*', (m) => { markers.push(m.raw); });
   const clean = await router.process('Hello @@pause@@ world @@fear:0.5@@');
-  assertEqual(clean, 'Hello  world ');
+  assertEqual(clean, 'Hello world');
   assertEqual(markers.length, 2);
 });
 
