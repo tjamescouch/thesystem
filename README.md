@@ -1,4 +1,4 @@
-# TheSystem
+# thesystem
 
 Install it and you have a dev shop.
 
