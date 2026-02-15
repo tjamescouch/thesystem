@@ -203,7 +203,7 @@ export class Orchestrator {
 
     console.log('[thesystem] Cloning and building dashboard...');
     await this.shell(
-      'git clone https://github.com/tjamescouch/agentchat-dashboard.git ~/.thesystem/services/dashboard',
+      'git clone https://github.com/tjamescouch/agentdash.git ~/.thesystem/services/dashboard',
       120000
     );
     await this.shell(
@@ -231,10 +231,10 @@ export class Orchestrator {
       );
       await this.waitForPort(config.server.port, 30000);
 
-      console.log('[thesystem] Starting agentchat-dashboard...');
+      console.log('[thesystem] Starting agentdash...');
       await this.daemonize(
         `cd ~/.thesystem/services/dashboard/server && AGENTCHAT_WS_URL=ws://localhost:${config.server.port} PORT=${config.server.dashboard} node dist/index.js`,
-        '/tmp/agentchat-dashboard.log'
+        '/tmp/agentdash.log'
       );
       await this.waitForPort(config.server.dashboard);
     }
@@ -300,7 +300,7 @@ export class Orchestrator {
     console.log('[thesystem] Stopping services...');
     const stopPatterns = [
       { name: 'agentctl-swarm', grep: 'agentctl-swarm' },
-      { name: 'agentchat-dashboard', grep: 'dashboard/server' },
+      { name: 'agentdash', grep: 'dashboard/server' },
       { name: 'agentchat-server', grep: 'agentchat serve' },
     ];
     for (const proc of stopPatterns) {
@@ -347,7 +347,7 @@ export class Orchestrator {
 
     const services = [
       { name: 'agentchat-server', grep: 'agentchat serve' },
-      { name: 'agentchat-dashboard', grep: 'dashboard/server' },
+      { name: 'agentdash', grep: 'dashboard/server' },
       { name: 'agentctl-swarm', grep: 'agentctl-swarm' },
     ];
 
@@ -355,7 +355,7 @@ export class Orchestrator {
       try {
         const pid = await this.shell(`pgrep -f "${svc.grep}" | head -1`);
         const port = svc.name === 'agentchat-server' ? (this.config?.server.port ?? 6667)
-          : svc.name === 'agentchat-dashboard' ? (this.config?.server.dashboard ?? 3000)
+          : svc.name === 'agentdash' ? (this.config?.server.dashboard ?? 3000)
           : null;
 
         components.push({

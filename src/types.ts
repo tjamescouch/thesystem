@@ -63,5 +63,5 @@ export const DEFAULT_CONFIG: SystemConfig = {
 export const COMPATIBILITY_MATRIX: CompatibilityMatrix = {
   '@tjamescouch/agentchat': { min: '0.22.0', max: '1.0.0' },
   'agentctl-swarm': { min: '0.1.0', max: '1.0.0' },
-  'agentchat-dashboard': { min: '0.1.0', max: '1.0.0' },
+  'agentdash': { min: '0.1.0', max: '1.0.0' },
 };

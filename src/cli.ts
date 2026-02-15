@@ -186,7 +186,7 @@ async function main(): Promise<void> {
       const svc = args[1] || 'server';
       const logMap: Record<string, string> = {
         server: '/tmp/agentchat-server.log',
-        dashboard: '/tmp/agentchat-dashboard.log',
+        dashboard: '/tmp/agentdash.log',
         swarm: '/tmp/agentctl-swarm.log',
       };
       const logFile = logMap[svc];

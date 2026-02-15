@@ -249,8 +249,8 @@ checked on startup and upgrade. incompatible versions block with suggested resol
 - **Restart single component** — `restart(component)` interface missing
 
 ### stale references ⚠️
-- `installIfNeeded()` clones `agentchat-dashboard` → should be `agentforce`
-- Compatibility matrix references `agentchat-dashboard` → should be `agentforce`
+- ~~`installIfNeeded()` clones `agentchat-dashboard`~~ → fixed: now clones `agentdash`
+- ~~Compatibility matrix references `agentchat-dashboard`~~ → fixed: now references `agentdash`
 
 ## components
 

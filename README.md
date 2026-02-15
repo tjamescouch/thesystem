@@ -104,7 +104,7 @@ Environment variables can be used with `${VAR}` syntax. Secrets should live in e
 │  ┌══ Lima VM "thesystem" ════════════════════════════════┐  │
 │  ║                                                        ║  │
 │  ║  agentchat-server :6667  (server mode only)           ║  │
-│  ║  agentchat-dashboard :3000  (server mode only)        ║  │
+│  ║  agentdash :3000  (server mode only)        ║  │
 │  ║                                                        ║  │
 │  ║  agentctl-swarm                                        ║  │
 │  ║    ├── Agent 0 (Podman container)                      ║  │
