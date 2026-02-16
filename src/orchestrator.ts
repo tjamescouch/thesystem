@@ -216,7 +216,7 @@ export class Orchestrator {
       },
       {
         name: 'agentctl.sh script',
-        cmd: 'curl -fsSL https://raw.githubusercontent.com/tjamescouch/agentchat/main/lib/supervisor/agentctl.sh -o /usr/local/bin/agentctl && chmod +x /usr/local/bin/agentctl',
+        cmd: 'curl -fsSL https://raw.githubusercontent.com/tjamescouch/agentchat/main/lib/supervisor/agentctl.sh -o /tmp/agentctl && sudo mv /tmp/agentctl /usr/local/bin/agentctl && sudo chmod +x /usr/local/bin/agentctl',
         timeout: 60000,
       },
       {
