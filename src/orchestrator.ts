@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -270,6 +270,44 @@ export class Orchestrator {
     console.log('\n[thesystem] ✓ All components installed.');
   }
 
+  private async ensureAgentAuthProxy(): Promise<void> {
+    const proxyPort = process.env.AGENTAUTH_PORT || String(AGENTAUTH_PORT);
+    const url = `http://localhost:${proxyPort}/agentauth/health`;
+
+    // Check if already running
+    try {
+      await exec('curl', ['-sf', url], { timeout: 2000 });
+      return; // Already up
+    } catch {
+      // Not running — auto-start it
+    }
+
+    console.log('[thesystem] Starting agentauth proxy...');
+    const thesystem = process.execPath === process.argv[0]
+      ? process.argv[1]  // running as `node cli.js`
+      : process.argv[0]; // running as compiled binary
+
+    const child = spawn(process.execPath, [thesystem, 'agentauth', 'start'], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    child.unref();
+
+    // Wait for proxy to become healthy (up to 10s)
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        await exec('curl', ['-sf', url], { timeout: 1000 });
+        return; // Up
+      } catch {
+        // Still starting
+      }
+    }
+    throw new Error(`agentauth proxy failed to start on port ${proxyPort}. Run: thesystem agentauth start`);
+  }
+
   private async startServices(config: SystemConfig): Promise<void> {
     await this.installIfNeeded();
 
@@ -294,25 +332,9 @@ export class Orchestrator {
 
     // Start agent swarm if configured
     if (config.swarm.agents > 0) {
-      // Guard: require agentauth proxy running on the host.
-      // SECURITY: do not support env-var auth fallback by default (exfil risk).
+      await this.ensureAgentAuthProxy();
       const proxyPort = process.env.AGENTAUTH_PORT || String(AGENTAUTH_PORT);
-      let proxyOk = false;
-      try {
-        await exec('curl', ['-sf', `http://localhost:${proxyPort}/agentauth/health`], { timeout: 3000 });
-        proxyOk = true;
-      } catch {
-        // Proxy not running
-      }
-
-      if (!proxyOk) {
-        console.error('[thesystem] ERROR: agentauth proxy not running on localhost:' + proxyPort);
-        console.error('[thesystem] Start it first: thesystem agentauth start');
-        console.error('[thesystem] Agents need API access via proxy. Skipping swarm startup.');
-        return;
-      }
-
-      console.log(`[thesystem] agentauth proxy detected on :${proxyPort}`);
+      console.log(`[thesystem] agentauth proxy ready on :${proxyPort}`);
       console.log(`[thesystem] Starting swarm (${config.swarm.agents} agents)...`);
       await this.daemonize(
         `agentctl start --count ${config.swarm.agents} --channels ${config.channels.join(',')}`,
