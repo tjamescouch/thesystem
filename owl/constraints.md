@@ -19,7 +19,7 @@
 - configuration lives in `thesystem.yaml` in the project root
 - sensible defaults for everything — config file is optional for basic usage
 - config schema is validated on load with clear error messages
-- secrets (API keys, tokens) are read from environment variables, never stored in config
+- secrets (API keys, tokens) are stored in macOS Keychain via `thesystem keys set`, never in config or env vars; the agentauth proxy reads them at runtime
 
 ## network
 
@@ -31,8 +31,8 @@
 
 - TheSystem spawns components as child processes
 - graceful shutdown: SIGTERM to all children, wait for drain, then exit
-- health checks on each component — restart on failure with backoff
-- logs from all components are multiplexed to stdout with component prefixes
+- health checks on each component — restart on failure with backoff (target state; not yet implemented)
+- logs from all components are multiplexed to stdout with component prefixes (target state; not yet implemented)
 
 ## language
 

@@ -13,7 +13,8 @@ manages the lifecycle of the Lima VM, services, and agent swarm.
 ### implemented ✅
 - create/start/stop/destroy Lima VM via `limactl`
 - generate Lima YAML from config (VM resources, port forwards, env vars)
-- install packages on first run (agentchat, agentctl, claude-code, dashboard)
+- install packages on first run (agentchat, agentctl, claude-code, gro, niki, dashboard)
+- `reinstall()` — clean and reinstall all components inside VM
 - start services in dependency order: agentchat-server → dashboard → swarm
 - stop services in reverse order via `pkill`
 - wait for port readiness before starting downstream services
@@ -29,7 +30,6 @@ manages the lifecycle of the Lima VM, services, and agent swarm.
 - HTTP health endpoint probing (currently pgrep only)
 - multiplex component logs to stdout with `[component]` prefixes
 - restart single component
-- per-agent Podman container creation and management
 - egress filtering (iptables) on containers
 
 ## interfaces

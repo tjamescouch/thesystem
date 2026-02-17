@@ -236,21 +236,19 @@ checked on startup and upgrade. incompatible versions block with suggested resol
 - Secret stripping (5 keys blocked from VM)
 - Agentauth proxy health gate before swarm start
 - Compatibility matrix validation
-- CLI: init, start, stop, status, destroy, doctor, logs, config, version
+- CLI: init, start, stop, status, destroy, doctor, logs, config, version, reinstall
+- **macOS Keychain integration** — `thesystem keys set/get`; agentauth proxy reads from Keychain
+- **agentauth proxy** — host-side HTTP proxy; agents route LLM calls through it; keys never enter VM
+- **Per-agent Podman containers** — managed by agentctl-swarm
+- **gro runtime** — installed alongside claude-code on first run
 
 ### not yet implemented ❌
-- **Per-agent Podman containers** — agents run as bare processes, not isolated containers
 - **Service restart with backoff** — dead services stay dead
 - **HTTP health probing** — only pgrep, no HTTP checks
-- **Log multiplexing** — logs go to separate files, not stdout
-- **macOS Keychain integration** — keys still come from env vars
+- **Log multiplexing** — logs go to separate files (`/tmp/*.log`), not stdout with prefixes
 - **Egress filtering (iptables)** — discussed, not enforced
-- **gro runtime support in swarm** — agentctl has `--use-gro`, thesystem doesn't pass it through
 - **Restart single component** — `restart(component)` interface missing
-
-### stale references ⚠️
-- ~~`installIfNeeded()` clones `agentchat-dashboard`~~ → fixed: now clones `agentdash`
-- ~~Compatibility matrix references `agentchat-dashboard`~~ → fixed: now references `agentdash`
+- **`thesystem keys rotate`** — rotate key in Keychain and restart proxy
 
 ## components
 
