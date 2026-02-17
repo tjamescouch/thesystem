@@ -1,4 +1,5 @@
 import http from 'http';
+import { Readable } from 'stream';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
@@ -55,7 +56,7 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
           };
           if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
 
-          // Pass through selected headers (no auth headers)
+          // Pipe response stream — supports SSE/streaming APIs
           const resp = await fetch(upstreamUrl, {
             method: req.method,
             headers,
@@ -63,8 +64,11 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
           });
 
           res.writeHead(resp.status, Object.fromEntries(resp.headers.entries()));
-          const respBuf = Buffer.from(await resp.arrayBuffer());
-          res.end(respBuf);
+          if (resp.body) {
+            Readable.fromWeb(resp.body as any).pipe(res);
+          } else {
+            res.end();
+          }
         });
         return;
       }
@@ -87,7 +91,7 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
           };
           if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
 
-          // Pass through selected headers (no auth headers)
+          // Pipe response stream — supports SSE/streaming APIs
           const resp = await fetch(upstreamUrl, {
             method: req.method,
             headers,
@@ -95,8 +99,11 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
           });
 
           res.writeHead(resp.status, Object.fromEntries(resp.headers.entries()));
-          const respBuf = Buffer.from(await resp.arrayBuffer());
-          res.end(respBuf);
+          if (resp.body) {
+            Readable.fromWeb(resp.body as any).pipe(res);
+          } else {
+            res.end();
+          }
         });
         return;
       }
