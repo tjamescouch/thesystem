@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { loadConfig, writeDefaultConfig } from './config-loader';
 import { Orchestrator } from './orchestrator';
@@ -25,6 +25,7 @@ Usage:
   thesystem logs [svc]    Tail logs from a service (server, dashboard, swarm)
   thesystem version       Show version
   thesystem reinstall     Reinstall components inside VM
+  thesystem go            Open an interactive shell inside the VM
   thesystem keys set      Store API keys in macOS Keychain
   thesystem keys get      Read API keys from macOS Keychain (prints to stdout)
   thesystem agentauth     Run local agentauth proxy (required for swarm)
@@ -284,6 +285,24 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       await (orchestrator as any).reinstall();
+      break;
+    }
+
+    case 'go': {
+      // Open an interactive shell inside the VM.
+      // Uses --workdir /home to avoid the Lima cwd-mount issue (Lima maps your
+      // host cwd into the VM, which fails if the directory isn't mounted).
+      const vmName = 'thesystem';
+      const child = spawn('limactl', ['shell', '--workdir', '/home', vmName], {
+        stdio: 'inherit',
+      });
+      await new Promise<void>((resolve, reject) => {
+        child.on('close', (code) => {
+          if (code !== 0) reject(new Error(`shell exited with code ${code}`));
+          else resolve();
+        });
+        child.on('error', reject);
+      });
       break;
     }
 
