@@ -63,7 +63,14 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
             body: ['GET', 'HEAD'].includes((req.method || 'GET').toUpperCase()) ? undefined : body,
           });
 
-          res.writeHead(resp.status, Object.fromEntries(resp.headers.entries()));
+          // fetch() transparently decompresses content-encoding (gzip/br/deflate).
+          // Forwarding content-encoding would cause the client to double-decompress.
+          const fwdHeaders = Object.fromEntries(
+            [...resp.headers.entries()].filter(
+              ([k]) => !['content-encoding', 'transfer-encoding'].includes(k.toLowerCase())
+            )
+          );
+          res.writeHead(resp.status, fwdHeaders);
           if (resp.body) {
             Readable.fromWeb(resp.body as any).pipe(res);
           } else {
@@ -98,7 +105,12 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
             body: ['GET', 'HEAD'].includes((req.method || 'GET').toUpperCase()) ? undefined : body,
           });
 
-          res.writeHead(resp.status, Object.fromEntries(resp.headers.entries()));
+          const fwdHeaders = Object.fromEntries(
+            [...resp.headers.entries()].filter(
+              ([k]) => !['content-encoding', 'transfer-encoding'].includes(k.toLowerCase())
+            )
+          );
+          res.writeHead(resp.status, fwdHeaders);
           if (resp.body) {
             Readable.fromWeb(resp.body as any).pipe(res);
           } else {
