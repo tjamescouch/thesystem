@@ -104,13 +104,15 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
       res.writeHead(404, { 'content-type': 'text/plain' });
       res.end('not found');
     } catch (err: any) {
+      const msg = err?.message || 'internal error';
       res.writeHead(500, { 'content-type': 'text/plain' });
-      res.end('error');
+      res.end(msg);
     }
   });
 
-  server.listen(opts.port, '127.0.0.1', () => {
-    console.log(`[thesystem] agentauth proxy listening on http://127.0.0.1:${opts.port}`);
+  // Bind to all interfaces so Lima VM can reach the proxy via host.lima.internal
+  server.listen(opts.port, '0.0.0.0', () => {
+    console.log(`[thesystem] agentauth proxy listening on http://0.0.0.0:${opts.port} (LAN + VM accessible)`);
   });
 
   // Keep process alive
