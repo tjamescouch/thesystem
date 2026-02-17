@@ -177,7 +177,22 @@ export class Orchestrator {
     await this.startServices(config);
   }
 
+  /**
+   * Ensure npm global bin is on PATH in interactive shells.
+   * Idempotent — safe to call on every reinstall.
+   */
+  private async ensureNpmPath(): Promise<void> {
+    await this.shell(
+      `mkdir -p ~/.bashrc.d && ` +
+      `grep -q 'npm-global' ~/.bashrc.d/10-thesystem-prompt.sh 2>/dev/null || ` +
+      `echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc.d/10-thesystem-prompt.sh`,
+      10000
+    ).catch(() => {}); // Best effort
+  }
+
   private async installIfNeeded(): Promise<void> {
+    await this.ensureNpmPath();
+
     try {
       await this.shell('which agentchat', 5000);
       return; // Already installed
@@ -383,6 +398,7 @@ export class Orchestrator {
     console.log('[thesystem] Cleaning previous installation...');
     await this.shell('rm -rf ~/.thesystem/services/dashboard', 30000).catch(() => {});
     await this.shell('npm uninstall -g @tjamescouch/agentchat agentctl-swarm @anthropic-ai/claude-code 2>/dev/null || true', 30000).catch(() => {});
+    await this.ensureNpmPath();
     console.log('[thesystem] Clean. Running fresh install...');
     await this.installIfNeeded();
   }
