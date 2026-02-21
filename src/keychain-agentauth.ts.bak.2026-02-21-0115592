@@ -34,36 +34,8 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
       const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
       if (url.pathname === '/agentauth/health') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', backends: ['anthropic', 'openai', 'github'], port: opts.port }));
-        return;
-      }
-
-      // Git credential endpoint — serves tokens for git-credential-agentauth
-      const credMatch = url.pathname.match(/^\/agentauth\/credential\/(\w+)$/);
-      if (credMatch) {
-        const provider = credMatch[1];
-        try {
-          const token = await readKeyFromKeychain(provider);
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ token }));
-        } catch {
-          res.writeHead(404, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'no_credential', message: `No key for ${provider} in Keychain` }));
-        }
-        return;
-      }
-
-      // Git credential endpoint for git-credential-agentauth
-      if (url.pathname === '/agentauth/credential/github') {
-        try {
-          const token = await readKeyFromKeychain('github');
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ token }));
-        } catch (err: any) {
-          res.writeHead(500, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'keychain_read_failed', message: err.message }));
-        }
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('ok');
         return;
       }
 
