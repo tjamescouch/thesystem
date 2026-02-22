@@ -67,6 +67,19 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
         return;
       }
 
+      // Git credential endpoint for git-credential-agentauth
+      if (url.pathname === '/agentauth/credential/github') {
+        try {
+          const token = await readKeyFromKeychain('github');
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ token }));
+        } catch (err: any) {
+          res.writeHead(500, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'keychain_read_failed', message: err.message }));
+        }
+        return;
+      }
+
       // Anthropic proxy
       if (url.pathname === '/anthropic' || url.pathname.startsWith('/anthropic/')) {
         const upstreamPath = url.pathname.replace(/^\/anthropic/, '') || '/';
