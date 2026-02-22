@@ -289,7 +289,7 @@ export class Orchestrator {
       console.log('[thesystem] Checking theswarm for updates...');
       try {
         await this.shell(
-          'test -d ~/.thesystem/services/theswarm && cd ~/.thesystem/services/theswarm && git pull --ff-only && npm install -g .',
+          'test -d ~/.thesystem/services/theswarm && cd ~/.thesystem/services/theswarm && git pull --ff-only && npm install -g --install-links .',
           60000
         );
       } catch {
@@ -310,8 +310,9 @@ export class Orchestrator {
         }
       }
       if (!installedFromDev) {
+        // If dir exists (from previous install), pull updates; otherwise clone fresh
         await this.shell(
-          'git clone https://github.com/tjamescouch/agentctl-swarm.git ~/.thesystem/services/theswarm && cd ~/.thesystem/services/theswarm && npm install -g .',
+          'if [ -d ~/.thesystem/services/theswarm ]; then cd ~/.thesystem/services/theswarm && git pull --ff-only; else git clone https://github.com/tjamescouch/agentctl-swarm.git ~/.thesystem/services/theswarm; fi && cd ~/.thesystem/services/theswarm && npm install -g --install-links .',
           120000
         );
       }
@@ -384,7 +385,7 @@ export class Orchestrator {
     if (config.mode === 'server') {
       console.log('[thesystem] Starting agentchat-server...');
       await this.daemonize(
-        `agentchat serve --port ${config.server.port} --host 0.0.0.0`,
+        `LURK_DISABLED=true agentchat serve --port ${config.server.port} --host 0.0.0.0`,
         '/tmp/agentchat-server.log'
       );
       await this.waitForPort(config.server.port, 30000);
@@ -466,7 +467,8 @@ export class Orchestrator {
   private async daemonize(command: string, logFile: string): Promise<void> {
     // Use setsid to create a new session, close all inherited FDs,
     // and redirect stdin from /dev/null so the SSH session can exit cleanly.
-    const wrapper = `setsid bash -c 'exec > ${logFile} 2>&1 < /dev/null; ${command}' &`;
+    // Include PATH/NODE_PATH setup inside the setsid shell since it's a new session.
+    const wrapper = `setsid bash -c 'export PATH="$HOME/.npm-global/bin:$PATH"; export NODE_PATH="$HOME/.npm-global/lib/node_modules"; exec > ${logFile} 2>&1 < /dev/null; ${command}' &`;
     await this.shell(wrapper);
     // Brief pause to let the process start
     await new Promise(r => setTimeout(r, 500));
