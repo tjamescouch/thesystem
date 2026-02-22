@@ -111,117 +111,17 @@ Secrets never leave the host machine. The agentauth proxy reads keys from macOS 
 # Store keys (one-time setup)
 thesystem keys set anthropic sk-ant-...
 thesystem keys set openai sk-...
-thesystem keys set xai key-...       # xAI (Grok) API key
-thesystem keys set google AIza...    # Google Generative AI API key
 ```
 
 The agentauth proxy starts automatically as part of `thesystem start`. You can also run it manually with `thesystem agentauth start` if needed outside of the normal start sequence.
 
-### Supported Providers
-
-| Provider | Setup Command | Environment Variable | Upstream |
-|----------|---------------|----------------------|----------|
-| Anthropic Claude | `thesystem keys set anthropic sk-ant-...` | `ANTHROPIC_BASE_URL` → `/anthropic/*` | https://api.anthropic.com |
-| OpenAI GPT | `thesystem keys set openai sk-...` | `OPENAI_BASE_URL` → `/openai/*` | https://api.openai.com |
-| xAI Grok | `thesystem keys set xai key-...` | `XAI_BASE_URL` → `/xai/*` | https://api.x.ai |
-| Google Gemini | `thesystem keys set google AIza...` | `GOOGLE_API_KEY` → `/google/*` | https://generativelanguage.googleapis.com |
-
-### Setting Up Each Provider
-
-#### Anthropic Claude
-
-1. Get your API key from https://console.anthropic.com/account/keys
-2. Store it:
-   ```bash
-   thesystem keys set anthropic sk-ant-...
-   ```
-3. Inside the VM, use:
-   ```bash
-   export ANTHROPIC_BASE_URL='http://host.lima.internal:9999/anthropic'
-   export ANTHROPIC_API_KEY='proxy-managed'
-   ```
-
-#### OpenAI GPT
-
-1. Get your API key from https://platform.openai.com/account/api-keys
-2. Store it:
-   ```bash
-   thesystem keys set openai sk-...
-   ```
-3. Inside the VM, use:
-   ```bash
-   export OPENAI_BASE_URL='http://host.lima.internal:9999/openai'
-   export OPENAI_API_KEY='proxy-managed'
-   ```
-
-#### xAI Grok
-
-1. Get your API key from https://console.x.ai
-2. Store it:
-   ```bash
-   thesystem keys set xai key-...
-   ```
-3. Inside the VM, use:
-   ```bash
-   export XAI_BASE_URL='http://host.lima.internal:9999/xai'
-   export XAI_API_KEY='proxy-managed'
-   ```
-4. Or use the Grok client directly (compatible with OpenAI SDK):
-   ```python
-   from openai import OpenAI
-   client = OpenAI(base_url="http://host.lima.internal:9999/xai", api_key="proxy-managed")
-   ```
-
-#### Google Generative AI (Gemini)
-
-1. Get your API key from https://ai.google.dev/tutorials/setup
-   - Create a project in Google Cloud Console
-   - Enable the Generative AI API
-   - Create an API key
-2. Store it:
-   ```bash
-   thesystem keys set google AIza...
-   ```
-3. Inside the VM, use with the Google SDK:
-   ```python
-   import google.generativeai as genai
-   genai.configure(api_key="AIza...")  # or read from env
-   ```
-4. For REST API calls, use the proxy:
-   ```bash
-   curl -X GET "http://host.lima.internal:9999/google/v1beta/models" \
-     -H "x-goog-api-key: proxy-managed"
-   ```
-
-### Complete Multi-Provider Setup Example
-
-```bash
-# Store all keys (one-time)
-thesystem keys set anthropic sk-ant-...
-thesystem keys set openai sk-...
-thesystem keys set xai key-...
-thesystem keys set google AIza...
-
-# Boot the system
-thesystem start
-
-# Inside the VM or agent container, all providers are auto-configured
-thesystem go
-```
-
 ## Architecture
-
-The proxy acts as an API key router. Keys never enter the VM.
 
 ```
 ┌──── Your Mac ──────────────────────────────────────────────┐
 │                                                             │
 │  thesystem CLI (host-side, manages VM lifecycle)            │
- │  agentauth proxy :9999 (API key router, reads Keychain)    │
- │    ├─ /anthropic/* → api.anthropic.com (w/ x-api-key)     │
- │    ├─ /openai/* → api.openai.com (w/ Bearer token)        │
- │    ├─ /xai/* → api.x.ai (w/ Bearer token)                 │
- │    └─ /google/* → generativelanguage.googleapis.com (key)  │
+│  agentauth proxy :9999 (reads Keychain, never forwards keys)│
 │  Your Claude Code sessions (unmanaged, trusted)             │
 │                                                             │
 │  ┌══ Lima VM "thesystem" ════════════════════════════════┐  │
@@ -294,37 +194,6 @@ Common issues:
 - **Components out of date**: Run `thesystem reinstall` to force a fresh install inside the VM.
 - **`limactl shell thesystem` fails**: Lima resolves your cwd inside the VM, so running the command from a directory that isn't mounted will error. Use `cd /tmp && limactl shell thesystem` or add an alias: `alias entersystem='cd /tmp && limactl shell thesystem'`.
 
-
-## Per-Provider Troubleshooting
-
-### Anthropic
-- **401 Unauthorized**: Verify key with `thesystem keys get anthropic`. Key should start with `sk-ant-`.
-- **Empty key error**: Key not stored in Keychain. Run `thesystem keys set anthropic <key>` first.
-
-### OpenAI
-- **401 Unauthorized**: Verify with `thesystem keys get openai`. Key should start with `sk-`.
-- **Rate limited**: Check OpenAI account quotas at https://platform.openai.com/account/billing/limits
-
-### xAI (Grok)
-- **401 Unauthorized**: Verify with `thesystem keys get xai`. Get new key from https://console.x.ai
-- **Rate limited**: Grok has different tier limits. Check https://x.ai/docs/guides/usage-limits
-- **SDK compatibility**: xAI API is OpenAI-compatible, so OpenAI libraries work with custom base URL
-
-### Google Generative AI (Gemini)
-- **Permission denied**: API key not activated for Generative AI. Enable it in Google Cloud Console.
-- **404 on REST endpoint**: Verify you're using the correct endpoint format for your key type.
-- **Rate limit (429)**: Google enforces per-project quotas. Use a dedicated key for agent workloads.
-- **Get API key from**: https://ai.google.dev/tutorials/setup → "Create API key"
-
-### Proxy Health Check
-
-```bash
-# Verify proxy is running and lists supported backends
-curl http://localhost:9999/agentauth/health
-
-# Expected response:
-# {"status":"ok","backends":["anthropic","openai","xai","google","github"],"port":9999}
-```
 ## License
 
 MIT

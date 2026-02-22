@@ -294,37 +294,6 @@ Common issues:
 - **Components out of date**: Run `thesystem reinstall` to force a fresh install inside the VM.
 - **`limactl shell thesystem` fails**: Lima resolves your cwd inside the VM, so running the command from a directory that isn't mounted will error. Use `cd /tmp && limactl shell thesystem` or add an alias: `alias entersystem='cd /tmp && limactl shell thesystem'`.
 
-
-## Per-Provider Troubleshooting
-
-### Anthropic
-- **401 Unauthorized**: Verify key with `thesystem keys get anthropic`. Key should start with `sk-ant-`.
-- **Empty key error**: Key not stored in Keychain. Run `thesystem keys set anthropic <key>` first.
-
-### OpenAI
-- **401 Unauthorized**: Verify with `thesystem keys get openai`. Key should start with `sk-`.
-- **Rate limited**: Check OpenAI account quotas at https://platform.openai.com/account/billing/limits
-
-### xAI (Grok)
-- **401 Unauthorized**: Verify with `thesystem keys get xai`. Get new key from https://console.x.ai
-- **Rate limited**: Grok has different tier limits. Check https://x.ai/docs/guides/usage-limits
-- **SDK compatibility**: xAI API is OpenAI-compatible, so OpenAI libraries work with custom base URL
-
-### Google Generative AI (Gemini)
-- **Permission denied**: API key not activated for Generative AI. Enable it in Google Cloud Console.
-- **404 on REST endpoint**: Verify you're using the correct endpoint format for your key type.
-- **Rate limit (429)**: Google enforces per-project quotas. Use a dedicated key for agent workloads.
-- **Get API key from**: https://ai.google.dev/tutorials/setup → "Create API key"
-
-### Proxy Health Check
-
-```bash
-# Verify proxy is running and lists supported backends
-curl http://localhost:9999/agentauth/health
-
-# Expected response:
-# {"status":"ok","backends":["anthropic","openai","xai","google","github"],"port":9999}
-```
 ## License
 
 MIT
