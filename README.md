@@ -27,7 +27,7 @@ thesystem start
 
 A complete multi-agent development environment running in an isolated Lima VM:
 
-- **AgentChat server** — WebSocket relay for agent communication
+- **agentchat server** — WebSocket relay for agent communication
 - **Dashboard** — real-time web UI at http://localhost:3000
 - **Agent swarm** — N AI agents managed by agentctl-swarm in Podman containers
 - **agentauth proxy** — API key proxy on the host; agents never see real keys
@@ -44,7 +44,7 @@ Runs a full node: router + workers. Self-contained, no cloud dependency.
 mode: server
 ```
 
-Your AgentChat server runs locally. Other instances can connect to you. Dashboard is available at localhost. This is the decentralized path — every instance is a node.
+Your agentchat server runs locally. Other instances can connect to you. Dashboard is available at localhost. This is the decentralized path — every instance is a node.
 
 ### Client Mode
 
