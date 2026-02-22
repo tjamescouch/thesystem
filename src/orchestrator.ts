@@ -54,6 +54,10 @@ export class Orchestrator {
       `export ANTHROPIC_API_KEY='proxy-managed'`,
       `export OPENAI_BASE_URL='http://host.lima.internal:${proxyPort}/openai'`,
       `export OPENAI_API_KEY='proxy-managed'`,
+      `export XAI_BASE_URL='http://host.lima.internal:${proxyPort}/xai'`,
+      `export XAI_API_KEY='proxy-managed'`,
+      `export GOOGLE_API_KEY='proxy-managed'`,
+      `export GOOGLE_GENERATIVEAI_API_KEY='proxy-managed'`,
     ].join('\n');
 
     const script = `#!/bin/bash\nexport PATH="$HOME/.npm-global/bin:$PATH"\n${envExports}\n${proxyExports}\n${command}\n`;
