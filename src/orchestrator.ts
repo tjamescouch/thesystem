@@ -284,7 +284,7 @@ export class Orchestrator {
 
     // Both modes: need theswarm for spawning agents
     try {
-      await this.shell('which agentctl', 5000);
+      await this.shell('which agentswarm', 5000);
       // Update theswarm if installed from git clone
       console.log('[thesystem] Checking theswarm for updates...');
       try {
@@ -379,7 +379,7 @@ export class Orchestrator {
     await this.installIfNeeded(config);
 
     // Kill any leftover processes from previous runs
-    await this.shell('pkill -f "agentchat serve" 2>/dev/null || true; pkill -f "dashboard/server" 2>/dev/null || true; pkill -f "agentctl start" 2>/dev/null || true; sleep 1');
+    await this.shell('pkill -f "agentchat serve" 2>/dev/null || true; pkill -f "dashboard/server" 2>/dev/null || true; pkill -f "agentswarm start" 2>/dev/null || true; sleep 1');
 
     if (config.mode === 'server') {
       console.log('[thesystem] Starting agentchat-server...');
@@ -442,7 +442,7 @@ export class Orchestrator {
       console.log(`[thesystem]   ${backend.provider}: ${backend.count} agent(s)${backend.model ? ` (model: ${backend.model})` : ''}`);
 
       await this.daemonize(
-        `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentctl start --server ${serverUrl} --count ${backend.count} --channels ${channels} --role ${backend.provider} --command "${command}${modelFlag}"`,
+        `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentswarm start --server ${serverUrl} --count ${backend.count} --channels ${channels} --role ${backend.provider} --command "${command}${modelFlag}"`,
         `/tmp/agentctl-swarm-${backend.provider}.log`
       );
     }
@@ -495,7 +495,7 @@ export class Orchestrator {
 
     console.log('[thesystem] Stopping services...');
     const stopPatterns = [
-      { name: 'theswarm', grep: 'agentctl start' },
+      { name: 'theswarm', grep: 'agentswarm start' },
       { name: 'agentchat-dashboard', grep: 'dashboard/server' },
       { name: 'agentchat-server', grep: 'agentchat serve' },
     ];
@@ -562,7 +562,7 @@ export class Orchestrator {
     const services = [
       { name: 'agentchat-server', grep: 'agentchat serve' },
       { name: 'agentchat-dashboard', grep: 'dashboard/server' },
-      { name: 'theswarm', grep: 'agentctl start' },
+      { name: 'theswarm', grep: 'agentswarm start' },
     ];
 
     for (const svc of services) {
