@@ -1,5 +1,9 @@
 # thesystem
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![GitHub all releases](https://img.shields.io/github/downloads/tjamescouch/thesystem/total)
+![v0.2.0](https://img.shields.io/github/downloads/tjamescouch/thesystem/v0.2.0/total)
+
 Install it and you have a dev shop.
 
 ## Quick Start
