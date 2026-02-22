@@ -14,6 +14,14 @@ const VM_NAME = 'thesystem';
 const SECRET_ENV_VARS = new Set([
   'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
+  'XAI_API_KEY',
+  'GROK_API_KEY',
+  'GOOGLE_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_GENERATIVEAI_API_KEY',
+  'MISTRAL_API_KEY',
+  'GROQ_API_KEY',
+  'DEEPSEEK_API_KEY',
   'CLAUDE_CODE_OAUTH_TOKEN',
   'GITHUB_TOKEN',
   'GITHUB_TOKEN_BEARER',
@@ -41,23 +49,43 @@ export class Orchestrator {
 
     // Forward host env vars matching known prefixes into the VM script
     // SECURITY: Strip vars containing secrets — agents use agentauth proxy instead
-    const envForwardRegex = /^(ANTHROPIC_|THESYSTEM_|AGENTCHAT_|CLAUDE_CODE_)/;
+    const envForwardRegex = /^(ANTHROPIC_|OPENAI_|XAI_|GROK_|GOOGLE_|GEMINI_|MISTRAL_|GROQ_|DEEPSEEK_|THESYSTEM_|AGENTCHAT_|CLAUDE_CODE_)/;
     const envExports = Object.entries(process.env)
       .filter(([k]) => envForwardRegex.test(k) && !SECRET_ENV_VARS.has(k))
       .map(([k, v]) => `export ${k}='${(v || '').replace(/'/g, "'\\''")}'`)
       .join('\n');
 
     // Inject proxy URLs so agents route through agentauth.
+    // Each provider gets a BASE_URL pointing at the proxy and a dummy API_KEY.
     const proxyPort = process.env.AGENTAUTH_PORT || String(AGENTAUTH_PORT);
+    const proxyBase = `http://host.lima.internal:${proxyPort}`;
     const proxyExports = [
-      `export ANTHROPIC_BASE_URL='http://host.lima.internal:${proxyPort}/anthropic'`,
+      // Anthropic
+      `export ANTHROPIC_BASE_URL='${proxyBase}/anthropic'`,
       `export ANTHROPIC_API_KEY='proxy-managed'`,
-      `export OPENAI_BASE_URL='http://host.lima.internal:${proxyPort}/openai'`,
+      // OpenAI
+      `export OPENAI_BASE_URL='${proxyBase}/openai'`,
       `export OPENAI_API_KEY='proxy-managed'`,
-      `export XAI_BASE_URL='http://host.lima.internal:${proxyPort}/xai'`,
+      // xAI / Grok
+      `export XAI_BASE_URL='${proxyBase}/xai'`,
       `export XAI_API_KEY='proxy-managed'`,
+      `export GROK_BASE_URL='${proxyBase}/grok'`,
+      `export GROK_API_KEY='proxy-managed'`,
+      // Google / Gemini
+      `export GOOGLE_BASE_URL='${proxyBase}/google'`,
       `export GOOGLE_API_KEY='proxy-managed'`,
       `export GOOGLE_GENERATIVEAI_API_KEY='proxy-managed'`,
+      `export GEMINI_BASE_URL='${proxyBase}/google'`,
+      `export GEMINI_API_KEY='proxy-managed'`,
+      // Mistral
+      `export MISTRAL_BASE_URL='${proxyBase}/mistral'`,
+      `export MISTRAL_API_KEY='proxy-managed'`,
+      // Groq
+      `export GROQ_BASE_URL='${proxyBase}/groq'`,
+      `export GROQ_API_KEY='proxy-managed'`,
+      // DeepSeek
+      `export DEEPSEEK_BASE_URL='${proxyBase}/deepseek'`,
+      `export DEEPSEEK_API_KEY='proxy-managed'`,
     ].join('\n');
 
     const script = `#!/bin/bash\nexport PATH="$HOME/.npm-global/bin:$PATH"\n${envExports}\n${proxyExports}\n${command}\n`;
@@ -393,6 +421,10 @@ export class Orchestrator {
       ? `ws://localhost:${config.server.port}`
       : config.client.remote;
     const channels = config.channels.join(',');
+
+    await this.ensureAgentAuthProxy();
+    const proxyPort = process.env.AGENTAUTH_PORT || String(AGENTAUTH_PORT);
+    console.log(`[thesystem] agentauth proxy ready on :${proxyPort}`);
 
     console.log(`[thesystem] Starting theswarm (${config.swarm.agents} agents)...`);
     await this.daemonize(

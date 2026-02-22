@@ -1,16 +1,19 @@
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { writeDefaultConfig } from './config-loader';
+
+const exec = promisify(execFile);
 
 /**
  * Interactive init — guides user through first-time setup.
- * 
+ *
  * Steps:
  * 1. Write thesystem.yaml with defaults
- * 2. Check for API keys in environment
- * 3. If missing, prompt user and write to .env file
- * 4. Run basic prerequisite checks
+ * 2. Check prerequisites (Node, Lima)
+ * 3. Prompt for API keys and store in macOS Keychain
  */
 
 interface InitOptions {
@@ -18,17 +21,13 @@ interface InitOptions {
   nonInteractive?: boolean;
 }
 
-function checkPrerequisite(name: string, checkCmd: string): Promise<boolean> {
-  const { execFile } = require('child_process');
-  const { promisify } = require('util');
-  const exec = promisify(execFile);
-  
+function checkPrerequisite(name: string): Promise<boolean> {
   return exec('which', [name])
     .then(() => true)
     .catch(() => false);
 }
 
-function prompt(rl: readline.Interface, question: string): Promise<string> {
+function promptSecret(rl: readline.Interface, question: string): Promise<string> {
   return new Promise((resolve) => {
     rl.question(question, (answer) => {
       resolve(answer.trim());
@@ -36,18 +35,24 @@ function prompt(rl: readline.Interface, question: string): Promise<string> {
   });
 }
 
-function promptSecret(rl: readline.Interface, question: string): Promise<string> {
-  // Note: readline doesn't natively hide input, but this is fine for terminal use
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      resolve(answer.trim());
-    });
-  });
+async function keychainHasKey(provider: string): Promise<boolean> {
+  try {
+    const svc = `thesystem/${provider}`;
+    const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
+    return !!stdout.trim();
+  } catch {
+    return false;
+  }
+}
+
+async function keychainSetKey(provider: string, key: string): Promise<void> {
+  const svc = `thesystem/${provider}`;
+  await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
 }
 
 export async function runInit(options: InitOptions): Promise<void> {
   const { cwd, nonInteractive } = options;
-  
+
   console.log('[thesystem] Initializing...\n');
 
   // Step 1: Write config file
@@ -61,15 +66,15 @@ export async function runInit(options: InitOptions): Promise<void> {
 
   // Step 2: Check prerequisites
   console.log('\n[thesystem] Checking prerequisites...\n');
-  
-  const prereqs: { name: string; cmd: string; install: string }[] = [
-    { name: 'limactl', cmd: 'limactl', install: 'brew install lima' },
-    { name: 'node', cmd: 'node', install: 'brew install node' },
+
+  const prereqs: { name: string; install: string }[] = [
+    { name: 'limactl', install: 'brew install lima' },
+    { name: 'node', install: 'brew install node' },
   ];
 
   let allGood = true;
   for (const p of prereqs) {
-    const found = await checkPrerequisite(p.name, p.cmd);
+    const found = await checkPrerequisite(p.name);
     if (found) {
       console.log(`  ✓ ${p.name}`);
     } else {
@@ -78,87 +83,64 @@ export async function runInit(options: InitOptions): Promise<void> {
     }
   }
 
-  // Step 3: Check API keys
-  console.log('\n[thesystem] Checking API keys...\n');
-  
-  const envFile = path.join(cwd, '.env');
-  const existingEnv = fs.existsSync(envFile) 
-    ? fs.readFileSync(envFile, 'utf-8') 
-    : '';
+  // Step 3: API keys → macOS Keychain
+  console.log('\n[thesystem] API keys (stored in macOS Keychain)...\n');
 
-  const keyChecks: { name: string; envVar: string; prompt: string }[] = [
-    { 
-      name: 'Anthropic', 
-      envVar: 'ANTHROPIC_API_KEY',
-      prompt: 'Enter your Anthropic API key (sk-ant-...): '
-    },
+  const keyChecks: { name: string; keychainName: string; hint: string }[] = [
+    { name: 'Anthropic',       keychainName: 'anthropic', hint: 'sk-ant-...' },
+    { name: 'OpenAI',          keychainName: 'openai',    hint: 'sk-...' },
+    { name: 'xAI / Grok',     keychainName: 'grok',      hint: 'xai-...' },
+    { name: 'Google / Gemini', keychainName: 'google',    hint: 'AI...' },
+    { name: 'Mistral',         keychainName: 'mistral',   hint: '' },
+    { name: 'Groq',            keychainName: 'groq',      hint: 'gsk_...' },
+    { name: 'DeepSeek',        keychainName: 'deepseek',  hint: '' },
   ];
 
-  const newEnvLines: string[] = [];
-  let needsEnvWrite = false;
+  let keysStored = 0;
 
   for (const key of keyChecks) {
-    const inEnv = !!process.env[key.envVar];
-    const inFile = existingEnv.includes(`${key.envVar}=`);
+    const inKeychain = await keychainHasKey(key.keychainName);
 
-    if (inEnv || inFile) {
-      console.log(`  ✓ ${key.name} (${key.envVar}) — found`);
+    if (inKeychain) {
+      console.log(`  ✓ ${key.name} — in Keychain`);
     } else if (nonInteractive) {
-      console.log(`  ✗ ${key.name} (${key.envVar}) — not set`);
-      console.log(`    Set it: export ${key.envVar}=your-key`);
+      console.log(`  - ${key.name} — not set (run: thesystem keys set ${key.keychainName} <key>)`);
     } else {
-      console.log(`  ? ${key.name} (${key.envVar}) — not found`);
-      
+      const hintStr = key.hint ? ` (${key.hint})` : '';
+      console.log(`  ? ${key.name} — not found`);
+
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
       });
 
-      const value = await promptSecret(rl, `    ${key.prompt}`);
+      const value = await promptSecret(rl, `    Enter ${key.name} API key${hintStr} (or press Enter to skip): `);
       rl.close();
 
       if (value) {
-        newEnvLines.push(`${key.envVar}=${value}`);
-        needsEnvWrite = true;
-        console.log(`    ✓ Saved to .env`);
+        await keychainSetKey(key.keychainName, value);
+        keysStored++;
+        console.log(`    ✓ Stored in macOS Keychain`);
       } else {
-        console.log(`    → Skipped (set later: export ${key.envVar}=your-key)`);
+        console.log(`    → Skipped (add later: thesystem keys set ${key.keychainName} <key>)`);
       }
-    }
-  }
-
-  // Write .env if we collected any keys
-  if (needsEnvWrite) {
-    const envContent = existingEnv
-      ? existingEnv.trimEnd() + '\n' + newEnvLines.join('\n') + '\n'
-      : '# TheSystem environment\n# API keys — do not commit this file!\n\n' + newEnvLines.join('\n') + '\n';
-    
-    fs.writeFileSync(envFile, envContent, { mode: 0o600 });
-    
-    // Ensure .env is in .gitignore
-    const gitignorePath = path.join(cwd, '.gitignore');
-    const gitignore = fs.existsSync(gitignorePath) 
-      ? fs.readFileSync(gitignorePath, 'utf-8')
-      : '';
-    if (!gitignore.includes('.env')) {
-      fs.appendFileSync(gitignorePath, '\n.env\n');
-      console.log('\n  Added .env to .gitignore');
     }
   }
 
   // Step 4: Summary
   console.log('\n[thesystem] Init complete.\n');
-  
+
   if (!allGood) {
     console.log('  ⚠ Some prerequisites are missing. Install them, then run:');
     console.log('    thesystem doctor\n');
   }
 
-  console.log('  Next steps:');
-  console.log('    1. Edit thesystem.yaml if needed');
-  if (needsEnvWrite) {
-    console.log('    2. Source your .env: source .env');
+  if (keysStored > 0) {
+    console.log(`  ✓ ${keysStored} key(s) stored in macOS Keychain`);
   }
-  console.log(`    ${needsEnvWrite ? '3' : '2'}. Start everything: thesystem start`);
+
+  console.log('\n  Next steps:');
+  console.log('    1. Edit thesystem.yaml if needed');
+  console.log('    2. Start everything: thesystem start');
   console.log('');
 }

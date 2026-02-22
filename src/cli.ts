@@ -165,15 +165,18 @@ async function main(): Promise<void> {
 
       // API key / auth token: prefer Keychain via agentauth proxy.
       // SECURITY: fail fast if secrets are present in env (exfil risk).
-      const envSecrets = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_TOKEN_BEARER']
-        .filter(k => !!process.env[k]);
+      const envSecrets = [
+        'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'XAI_API_KEY', 'GROK_API_KEY',
+        'GOOGLE_API_KEY', 'GEMINI_API_KEY', 'MISTRAL_API_KEY', 'GROQ_API_KEY',
+        'DEEPSEEK_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_TOKEN_BEARER',
+      ].filter(k => !!process.env[k]);
       if (envSecrets.length) {
-        console.log(`  API auth ... FAIL (secrets present in env: ${envSecrets.join(', ')})`);
+        console.log(`  API auth ... WARN (secrets present in env: ${envSecrets.join(', ')})`);
         console.log('           Use: thesystem keys set <provider> <key>  (stores in macOS Keychain)');
-        console.log('           Then: thesystem agentauth start');
+        console.log('           Then: unset the env vars for maximum security');
       } else {
         console.log('  API auth ... ok (no secrets in env)');
-        console.log('           Note: swarm still requires agentauth proxy healthy on localhost:9999');
+        console.log('           Note: swarm requires agentauth proxy healthy on localhost:9999');
       }
 
       // VM state

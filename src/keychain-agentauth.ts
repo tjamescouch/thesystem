@@ -117,6 +117,60 @@ function logError(clientIP: string, method: string, path: string, err: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Provider registry
+// ---------------------------------------------------------------------------
+
+interface ProviderConfig {
+  /** Base URL for the upstream API */
+  upstream: string;
+  /** How the API key is attached to requests */
+  authStyle: 'bearer' | 'x-api-key' | 'x-goog-api-key';
+  /** Headers to pass through from the original request (besides content-type) */
+  passthroughHeaders?: string[];
+}
+
+/**
+ * All supported providers.
+ * To add a new provider: add an entry here and store its key in Keychain:
+ *   thesystem keys set <name> <api-key>
+ */
+export const PROVIDERS: Record<string, ProviderConfig> = {
+  anthropic: {
+    upstream: 'https://api.anthropic.com',
+    authStyle: 'x-api-key',
+    passthroughHeaders: ['anthropic-version', 'anthropic-beta'],
+  },
+  openai: {
+    upstream: 'https://api.openai.com',
+    authStyle: 'bearer',
+  },
+  grok: {
+    upstream: 'https://api.x.ai',
+    authStyle: 'bearer',
+  },
+  xai: {
+    upstream: 'https://api.x.ai',
+    authStyle: 'bearer',
+  },
+  google: {
+    upstream: 'https://generativelanguage.googleapis.com',
+    authStyle: 'x-goog-api-key',
+  },
+  mistral: {
+    upstream: 'https://api.mistral.ai',
+    authStyle: 'bearer',
+  },
+  groq: {
+    upstream: 'https://api.groq.com',
+    authStyle: 'bearer',
+  },
+  deepseek: {
+    upstream: 'https://api.deepseek.com',
+    authStyle: 'bearer',
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Keychain
 // ---------------------------------------------------------------------------
 async function readKeyFromKeychain(provider: string): Promise<string> {
@@ -130,52 +184,17 @@ async function readKeyFromKeychain(provider: string): Promise<string> {
 // ---------------------------------------------------------------------------
 // Generic upstream forwarder
 // ---------------------------------------------------------------------------
-type ProxyRoute = {
-  provider: string;
-  upstreamBase: string;
-  authHeader: (apiKey: string) => Record<string, string>;
-  extraHeaders?: (req: http.IncomingMessage) => Record<string, string>;
-};
-
-const ROUTES: ProxyRoute[] = [
-  {
-    provider: 'anthropic',
-    upstreamBase: 'https://api.anthropic.com',
-    authHeader: (k) => ({ 'x-api-key': k }),
-    extraHeaders: (req) => ({
-      'anthropic-version': String(req.headers['anthropic-version'] || '2023-06-01'),
-    }),
-  },
-  {
-    provider: 'openai',
-    upstreamBase: 'https://api.openai.com',
-    authHeader: (k) => ({ 'Authorization': `Bearer ${k}` }),
-  },
-  {
-    provider: 'xai',
-    upstreamBase: 'https://api.x.ai',
-    authHeader: (k) => ({ 'Authorization': `Bearer ${k}` }),
-  },
-  {
-    provider: 'google',
-    upstreamBase: 'https://generativelanguage.googleapis.com',
-    authHeader: (k) => ({ 'x-goog-api-key': k }),
-  },
-];
-
-async function proxyRequest(
-  route: ProxyRoute,
+function proxyRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  url: URL,
+  provider: string,
+  config: ProviderConfig,
+  upstreamPath: string,
+  search: string,
   clientIP: string,
-) {
+): void {
   const start = Date.now();
-  const prefix = `/${route.provider}`;
-  const upstreamPath = url.pathname.replace(new RegExp(`^${prefix}`), '') || '/';
-  const upstreamUrl = new URL(`${route.upstreamBase}${upstreamPath}${url.search}`);
-
-  const apiKey = await readKeyFromKeychain(route.provider);
+  const upstreamUrl = new URL(`${config.upstream}${upstreamPath}${search}`);
 
   const chunks: Buffer[] = [];
   req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
@@ -183,13 +202,33 @@ async function proxyRequest(
     const body = Buffer.concat(chunks);
     const model = extractModel(body);
 
-    const headers: Record<string, string> = {
-      ...route.authHeader(apiKey),
-      ...(route.extraHeaders?.(req) ?? {}),
-    };
-    if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
-
     try {
+      const apiKey = await readKeyFromKeychain(provider);
+
+      const headers: Record<string, string> = {};
+      if (config.authStyle === 'bearer') {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      } else if (config.authStyle === 'x-goog-api-key') {
+        headers['x-goog-api-key'] = apiKey;
+      } else {
+        headers['x-api-key'] = apiKey;
+      }
+
+      // Forward content-type
+      if (req.headers['content-type']) {
+        headers['content-type'] = String(req.headers['content-type']);
+      }
+
+      // Forward provider-specific headers (e.g. anthropic-version)
+      for (const h of config.passthroughHeaders ?? []) {
+        const val = req.headers[h.toLowerCase()];
+        if (val) headers[h] = String(val);
+      }
+      // Default anthropic-version when not supplied by client
+      if (provider === 'anthropic' && !headers['anthropic-version']) {
+        headers['anthropic-version'] = '2023-06-01';
+      }
+
       const resp = await fetch(upstreamUrl, {
         method: req.method,
         headers,
@@ -207,25 +246,33 @@ async function proxyRequest(
       } else {
         res.end();
       }
-      logRequest(clientIP, req.method || 'GET', route.provider, upstreamPath, model, resp.status, Date.now() - start);
+      logRequest(clientIP, req.method || 'GET', provider, upstreamPath, model, resp.status, Date.now() - start);
     } catch (err: any) {
-      logError(clientIP, req.method || 'GET', url.pathname, err?.message || 'upstream fetch failed');
-      res.writeHead(502, { 'content-type': 'text/plain' });
+      logError(clientIP, req.method || 'GET', `/${provider}${upstreamPath}`, err?.message || 'upstream fetch failed');
+      if (!res.headersSent) {
+        res.writeHead(502, { 'content-type': 'text/plain' });
+      }
       res.end('bad gateway');
     }
   });
 }
 
+// ---------------------------------------------------------------------------
+// HTTP server
+// ---------------------------------------------------------------------------
+
 /**
  * Host-side agentauth proxy with logging and IP allowlist.
+ * Routes /<provider>/* to the provider's upstream API, injecting the
+ * API key from macOS Keychain. Supports streaming (SSE).
+ *
+ * Providers: {@link PROVIDERS}
  *
  * Routes:
  * - /agentauth/health -> 200 OK
+ * - /agentauth/providers -> list of registered providers
  * - /agentauth/credential/<provider> -> Keychain token for git-credential-agentauth
- * - /anthropic/* -> https://api.anthropic.com/*
- * - /openai/*    -> https://api.openai.com/*
- * - /xai/*       -> https://api.x.ai/*
- * - /google/*    -> https://generativelanguage.googleapis.com/*
+ * - /<provider>/* -> upstream API
  *
  * Security:
  * - IP allowlist: localhost, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
@@ -250,7 +297,14 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
       if (url.pathname === '/agentauth/health') {
         console.log(`[${timestamp()}] ${clientIP} GET /agentauth/health`);
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', backends: ['anthropic', 'openai', 'xai', 'google', 'github'], port: opts.port }));
+        res.end(JSON.stringify({ status: 'ok', backends: Object.keys(PROVIDERS), port: opts.port }));
+        return;
+      }
+
+      // List available providers
+      if (url.pathname === '/agentauth/providers') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(Object.keys(PROVIDERS)));
         return;
       }
 
@@ -271,11 +325,12 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
         return;
       }
 
-      // Provider proxy routes
-      for (const route of ROUTES) {
-        const prefix = `/${route.provider}`;
+      // Match /<provider>/... against the registry
+      for (const [name, config] of Object.entries(PROVIDERS)) {
+        const prefix = `/${name}`;
         if (url.pathname === prefix || url.pathname.startsWith(`${prefix}/`)) {
-          await proxyRequest(route, req, res, url, clientIP);
+          const upstreamPath = url.pathname.slice(prefix.length) || '/';
+          proxyRequest(req, res, name, config, upstreamPath, url.search, clientIP);
           return;
         }
       }
@@ -286,7 +341,9 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
     } catch (err: any) {
       const msg = err?.message || 'internal error';
       logError(clientIP, req.method || 'GET', req.url || '/', msg);
-      res.writeHead(500, { 'content-type': 'text/plain' });
+      if (!res.headersSent) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+      }
       res.end(msg);
     }
   });
@@ -294,6 +351,7 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
   const bindAddr = opts.bind ?? '0.0.0.0';
   server.listen(opts.port, bindAddr, () => {
     console.log(`[thesystem] agentauth proxy listening on http://${bindAddr}:${opts.port}`);
+    console.log(`[thesystem] providers: ${Object.keys(PROVIDERS).join(', ')}`);
     console.log(`[thesystem] IP allowlist: ${ALLOWED_CIDRS.join(', ')}`);
   });
 
