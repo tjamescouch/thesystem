@@ -415,7 +415,7 @@ export class Orchestrator {
 
     // Write token to a tmpfs file inside the VM, readable only by agent user
     const tokenVar = token.startsWith('sk-ant-') ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN';
-    await this.shell(`mkdir -p /run/thesystem && echo -n '${token.replace(/'/g, "'\\''")}' > /run/thesystem/agent-token && chmod 600 /run/thesystem/agent-token`);
+    await this.shell(`sudo mkdir -p /run/thesystem && sudo chown $(whoami) /run/thesystem && echo -n '${token.replace(/'/g, "'\\''")}' > /run/thesystem/agent-token && chmod 600 /run/thesystem/agent-token`);
 
     const serverUrl = config.mode === 'server'
       ? `ws://localhost:${config.server.port}`
@@ -442,7 +442,7 @@ export class Orchestrator {
       console.log(`[thesystem]   ${backend.provider}: ${backend.count} agent(s)${backend.model ? ` (model: ${backend.model})` : ''}`);
 
       await this.daemonize(
-        `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentswarm start --server ${serverUrl} --count ${backend.count} --channels ${channels} --role ${backend.provider} --command "${command}${modelFlag}"`,
+        `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentswarm start --server ${serverUrl} --count ${backend.count} --channels "${channels}" --role ${backend.provider} --base-path /tmp/thesystem-agents --command "${command}${modelFlag}"`,
         `/tmp/agentctl-swarm-${backend.provider}.log`
       );
     }

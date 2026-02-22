@@ -1,7 +1,7 @@
 # TheSystem configuration
 # Mode: "server" runs a full node (router + workers), "client" connects to a remote router
 # Docs: https://github.com/tjamescouch/TheSystem#configuration
-mode: client
+mode: server
 server:
   port: 6667
   dashboard: 3000
