@@ -88,7 +88,7 @@ export class Orchestrator {
       `export DEEPSEEK_API_KEY='proxy-managed'`,
     ].join('\n');
 
-    const script = `#!/bin/bash\nexport PATH="$HOME/.npm-global/bin:$PATH"\n${envExports}\n${proxyExports}\n${command}\n`;
+    const script = `#!/bin/bash\nexport PATH="$HOME/.npm-global/bin:$PATH"\nexport NODE_PATH="$HOME/.npm-global/lib/node_modules"\n${envExports}\n${proxyExports}\n${command}\n`;
 
     // Write script via limactl shell (simple echo, no backgrounding)
     await exec('limactl', ['shell', '--workdir', '/home', VM_NAME,
