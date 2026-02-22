@@ -11,7 +11,9 @@ thesystem init
 
 # Store API keys in macOS Keychain (one-time setup)
 thesystem keys set anthropic sk-ant-...
-thesystem keys set openai sk-...       # optional
+thesystem keys set openai sk-...
+thesystem keys set google AIzaSy...     # Added: Gemini/Google Cloud
+thesystem keys set xai xai-...          # Added: Grok/xAI
 
 # Boot the VM and all services (proxy auto-starts)
 thesystem start
