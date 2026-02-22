@@ -21,8 +21,8 @@ async function readKeyFromKeychain(provider: string): Promise<string> {
 /**
  * Minimal host-side agentauth proxy.
  * - /agentauth/health -> 200 OK
-* - /anthropic/* -> forwards to https://api.anthropic.com/* with x-api-key from Keychain
-* - /openai/* -> forwards to https://api.openai.com/* with Authorization Bearer from Keychain
+ * - /anthropic/* -> forwards to https://api.anthropic.com/* with x-api-key from Keychain
+ * - /openai/* -> forwards to https://api.openai.com/* with Authorization Bearer from Keychain
  * - /xai/* -> forwards to https://api.x.ai/* with Authorization Bearer from Keychain
  * - /google/* -> forwards to https://generativelanguage.googleapis.com/* with x-goog-api-key from Keychain
  *
@@ -37,7 +37,7 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
 
       if (url.pathname === '/agentauth/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
- res.end(JSON.stringify({ status: 'ok', backends: ['anthropic', 'openai', 'xai', 'google', 'github'], port: opts.port }));
+        res.end(JSON.stringify({ status: 'ok', backends: ['anthropic', 'openai', 'xai', 'google', 'github'], port: opts.port }));
         return;
       }
 
@@ -50,113 +50,8 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ token }));
         } catch {
-      // xAI proxy
-      if (url.pathname === '/xai' || url.pathname.startsWith('/xai/')) {
-        const upstreamPath = url.pathname.replace(/^\/xai/, '') || '/';
-        const upstreamUrl = new URL(`https://api.x.ai${upstreamPath}${url.search}`);
-
-        const apiKey = await readKeyFromKeychain('xai');
-
-        // Read request body
-        const chunks: Buffer[] = [];
-        req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-        req.on('end', async () => {
-          const body = Buffer.concat(chunks);
-
-          const headers: Record<string, string> = {
-            'Authorization': `Bearer ${apiKey}`,
-          };
-          if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
-
-          // Pipe response stream — supports SSE/streaming APIs
-          const resp = await fetch(upstreamUrl, {
-            method: req.method,
-            headers,
-            body: ['GET', 'HEAD'].includes((req.method || 'GET').toUpperCase()) ? undefined : body,
-          });
-
-          const fwdHeaders = Object.fromEntries(
-            [...resp.headers.entries()].filter(
-              ([k]) => !['content-encoding', 'transfer-encoding'].includes(k.toLowerCase())
-            )
-          );
-          res.writeHead(resp.status, fwdHeaders);
-          if (resp.body) {
-            Readable.fromWeb(resp.body as any).pipe(res);
-          } else {
-            res.end();
-          }
-        });
-        return;
-      }
-
-      // Google Generative AI proxy
-      if (url.pathname === '/google' || url.pathname.startsWith('/google/')) {
-        const upstreamPath = url.pathname.replace(/^\/google/, '') || '/';
-        const upstreamUrl = new URL(`https://generativelanguage.googleapis.com${upstreamPath}${url.search}`);
-
-        const apiKey = await readKeyFromKeychain('google');
-
-        // Read request body
-        const chunks: Buffer[] = [];
-        req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-        req.on('end', async () => {
-          const body = Buffer.concat(chunks);
-
-          const headers: Record<string, string> = {
-            'x-goog-api-key': apiKey,
-          };
-          if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
-
-          // Pipe response stream — supports SSE/streaming APIs
-          const resp = await fetch(upstreamUrl, {
-            method: req.method,
-            headers,
-            body: ['GET', 'HEAD'].includes((req.method || 'GET').toUpperCase()) ? undefined : body,
-          });
-
-          const fwdHeaders = Object.fromEntries(
-            [...resp.headers.entries()].filter(
-              ([k]) => !['content-encoding', 'transfer-encoding'].includes(k.toLowerCase())
-            )
-          );
-          res.writeHead(resp.status, fwdHeaders);
-          if (resp.body) {
-            Readable.fromWeb(resp.body as any).pipe(res);
-          } else {
-            res.end();
-          }
-        });
-        return;
-      }
           res.writeHead(404, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ error: 'no_credential', message: `No key for ${provider} in Keychain` }));
-        }
-        return;
-      }
-
-      // Git credential endpoint for git-credential-agentauth
-      if (url.pathname === '/agentauth/credential/github') {
-        try {
-          const token = await readKeyFromKeychain('github');
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ token }));
-        } catch (err: any) {
-          res.writeHead(500, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'keychain_read_failed', message: err.message }));
-        }
-        return;
-      }
-
-      // Git credential endpoint for git-credential-agentauth
-      if (url.pathname === '/agentauth/credential/github') {
-        try {
-          const token = await readKeyFromKeychain('github');
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ token }));
-        } catch (err: any) {
-          res.writeHead(500, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'keychain_read_failed', message: err.message }));
         }
         return;
       }
@@ -223,6 +118,82 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
           if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
 
           // Pipe response stream — supports SSE/streaming APIs
+          const resp = await fetch(upstreamUrl, {
+            method: req.method,
+            headers,
+            body: ['GET', 'HEAD'].includes((req.method || 'GET').toUpperCase()) ? undefined : body,
+          });
+
+          const fwdHeaders = Object.fromEntries(
+            [...resp.headers.entries()].filter(
+              ([k]) => !['content-encoding', 'transfer-encoding'].includes(k.toLowerCase())
+            )
+          );
+          res.writeHead(resp.status, fwdHeaders);
+          if (resp.body) {
+            Readable.fromWeb(resp.body as any).pipe(res);
+          } else {
+            res.end();
+          }
+        });
+        return;
+      }
+
+      // xAI proxy
+      if (url.pathname === '/xai' || url.pathname.startsWith('/xai/')) {
+        const upstreamPath = url.pathname.replace(/^\/xai/, '') || '/';
+        const upstreamUrl = new URL(`https://api.x.ai${upstreamPath}${url.search}`);
+
+        const apiKey = await readKeyFromKeychain('xai');
+
+        const chunks: Buffer[] = [];
+        req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        req.on('end', async () => {
+          const body = Buffer.concat(chunks);
+
+          const headers: Record<string, string> = {
+            'Authorization': `Bearer ${apiKey}`,
+          };
+          if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
+
+          const resp = await fetch(upstreamUrl, {
+            method: req.method,
+            headers,
+            body: ['GET', 'HEAD'].includes((req.method || 'GET').toUpperCase()) ? undefined : body,
+          });
+
+          const fwdHeaders = Object.fromEntries(
+            [...resp.headers.entries()].filter(
+              ([k]) => !['content-encoding', 'transfer-encoding'].includes(k.toLowerCase())
+            )
+          );
+          res.writeHead(resp.status, fwdHeaders);
+          if (resp.body) {
+            Readable.fromWeb(resp.body as any).pipe(res);
+          } else {
+            res.end();
+          }
+        });
+        return;
+      }
+
+      // Google Generative AI proxy
+      if (url.pathname === '/google' || url.pathname.startsWith('/google/')) {
+        const upstreamPath = url.pathname.replace(/^\/google/, '') || '/';
+        const upstreamUrl = new URL(`https://generativelanguage.googleapis.com${upstreamPath}${url.search}`);
+
+        const apiKey = await readKeyFromKeychain('google');
+
+        const chunks: Buffer[] = [];
+        req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        req.on('end', async () => {
+          const body = Buffer.concat(chunks);
+
+          const headers: Record<string, string> = {
+            'x-goog-api-key': apiKey,
+          };
+          if (req.headers['content-type']) headers['content-type'] = String(req.headers['content-type']);
+
           const resp = await fetch(upstreamUrl, {
             method: req.method,
             headers,
