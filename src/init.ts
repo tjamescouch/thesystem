@@ -7,13 +7,16 @@ import { writeDefaultConfig } from './config-loader';
 
 const exec = promisify(execFile);
 
+const BIOMETRIC_BIN = path.join(__dirname, '..', 'dist', 'thesystem-keychain');
+const hasBiometricBin = fs.existsSync(BIOMETRIC_BIN);
+
 /**
  * Interactive init — guides user through first-time setup.
  *
  * Steps:
  * 1. Write thesystem.yaml with defaults
  * 2. Check prerequisites (Node, Lima)
- * 3. Prompt for API keys and store in macOS Keychain
+ * 3. Prompt for API keys and store in macOS Keychain (with Touch ID when available)
  */
 
 interface InitOptions {
@@ -36,8 +39,19 @@ function promptSecret(rl: readline.Interface, question: string): Promise<string>
 }
 
 async function keychainHasKey(provider: string): Promise<boolean> {
+  const svc = `thesystem/${provider}`;
+
+  // Check biometric keychain first
+  if (hasBiometricBin) {
+    try {
+      const { stdout } = await exec(BIOMETRIC_BIN, ['get', svc, provider]);
+      if (stdout.trim()) return true;
+    } catch {
+      // Not in biometric keychain — check legacy
+    }
+  }
+
   try {
-    const svc = `thesystem/${provider}`;
     const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
     return !!stdout.trim();
   } catch {
@@ -47,6 +61,17 @@ async function keychainHasKey(provider: string): Promise<boolean> {
 
 async function keychainSetKey(provider: string, key: string): Promise<void> {
   const svc = `thesystem/${provider}`;
+
+  // Prefer biometric-protected storage when available
+  if (hasBiometricBin) {
+    try {
+      await exec(BIOMETRIC_BIN, ['set', svc, provider, key]);
+      return;
+    } catch {
+      // Fall through to legacy
+    }
+  }
+
   await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
 }
 

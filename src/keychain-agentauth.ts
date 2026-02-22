@@ -171,10 +171,29 @@ export const PROVIDERS: Record<string, ProviderConfig> = {
 };
 
 // ---------------------------------------------------------------------------
-// Keychain
+// Keychain — tries biometric helper first, falls back to security CLI
 // ---------------------------------------------------------------------------
+import * as path from 'path';
+import * as fs from 'fs';
+
+const BIOMETRIC_BIN = path.join(__dirname, '..', 'dist', 'thesystem-keychain');
+const hasBiometricBin = fs.existsSync(BIOMETRIC_BIN);
+
 async function readKeyFromKeychain(provider: string): Promise<string> {
   const svc = `thesystem/${provider}`;
+
+  // Try biometric-protected keychain first
+  if (hasBiometricBin) {
+    try {
+      const { stdout } = await exec(BIOMETRIC_BIN, ['get', svc, provider]);
+      const key = stdout.trim();
+      if (key) return key;
+    } catch {
+      // Not stored with biometric — fall through to legacy
+    }
+  }
+
+  // Fallback: plain macOS Keychain (no biometric)
   const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
   const key = stdout.trim();
   if (!key) throw new Error(`Empty key for provider ${provider}`);

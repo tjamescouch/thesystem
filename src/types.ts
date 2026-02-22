@@ -1,3 +1,9 @@
+export interface SwarmBackend {
+  provider: string;
+  count: number;
+  model?: string;
+}
+
 export interface SystemConfig {
   mode: 'server' | 'client';
   server: {
@@ -11,6 +17,7 @@ export interface SystemConfig {
   swarm: {
     agents: number;
     backend: string;
+    backends?: SwarmBackend[];
   };
   vm: {
     cpus: number;

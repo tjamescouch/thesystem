@@ -9,8 +9,17 @@ server:
 client:
   remote: wss://agentchat-server.fly.dev
 swarm:
-  agents: 2
+  agents: 4
   backend: claude
+  backends:
+    - provider: anthropic
+      count: 1
+    - provider: groq
+      count: 1
+    - provider: openai
+      count: 1
+    - provider: xai
+      count: 1
 vm:
   cpus: 4
   memory: 8GiB

@@ -269,9 +269,13 @@ async function main(): Promise<void> {
         dashboard: '/tmp/agentdash.log',
         swarm: '/tmp/agentctl-swarm.log',
       };
+      // Support per-provider swarm logs: "thesystem logs swarm-groq"
+      if (svc.startsWith('swarm-')) {
+        logMap[svc] = `/tmp/agentctl-${svc}.log`;
+      }
       const logFile = logMap[svc];
       if (!logFile) {
-        console.error(`Unknown service "${svc}". Options: server, dashboard, swarm`);
+        console.error(`Unknown service "${svc}". Options: server, dashboard, swarm, swarm-<provider>`);
         process.exit(1);
       }
 

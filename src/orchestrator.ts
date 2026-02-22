@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as YAML from 'yaml';
-import { SystemConfig, ComponentStatus } from './types';
+import { SystemConfig, SwarmBackend, ComponentStatus } from './types';
 import { createSecretStore } from './secret-store';
 
 const exec = promisify(execFile);
@@ -426,12 +426,41 @@ export class Orchestrator {
     const proxyPort = process.env.AGENTAUTH_PORT || String(AGENTAUTH_PORT);
     console.log(`[thesystem] agentauth proxy ready on :${proxyPort}`);
 
-    console.log(`[thesystem] Starting theswarm (${config.swarm.agents} agents)...`);
-    await this.daemonize(
-      `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentctl start --server ${serverUrl} --count ${config.swarm.agents} --channels ${channels} --role ${config.swarm.backend}`,
-      '/tmp/agentctl-swarm.log'
-    );
+    // Resolve backends: use explicit backends array, or synthesize from legacy backend + agents
+    const backends: SwarmBackend[] = config.swarm.backends && config.swarm.backends.length > 0
+      ? config.swarm.backends
+      : [{ provider: config.swarm.backend, count: config.swarm.agents }];
+
+    const totalAgents = backends.reduce((sum, b) => sum + b.count, 0);
+    console.log(`[thesystem] Starting theswarm (${totalAgents} agents across ${backends.length} backend(s))...`);
+
+    for (const backend of backends) {
+      // Determine the agent command for this provider
+      const command = this.agentCommandForProvider(backend.provider, backend.model);
+      const modelFlag = backend.model ? ` -m ${backend.model}` : '';
+
+      console.log(`[thesystem]   ${backend.provider}: ${backend.count} agent(s)${backend.model ? ` (model: ${backend.model})` : ''}`);
+
+      await this.daemonize(
+        `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentctl start --server ${serverUrl} --count ${backend.count} --channels ${channels} --role ${backend.provider} --command "${command}${modelFlag}"`,
+        `/tmp/agentctl-swarm-${backend.provider}.log`
+      );
+    }
+
     console.log('[thesystem] Swarm started.');
+  }
+
+  /**
+   * Return the agent CLI command for a given provider.
+   * Anthropic/claude uses the `claude` CLI; all other providers use `gro -P <provider>`.
+   */
+  private agentCommandForProvider(provider: string, model?: string): string {
+    const claudeProviders = ['claude', 'anthropic'];
+    if (claudeProviders.includes(provider)) {
+      return 'claude';
+    }
+    // All other providers use gro with the appropriate provider flag
+    return `gro -P ${provider} --bash --persistent`;
   }
 
   private async daemonize(command: string, logFile: string): Promise<void> {
