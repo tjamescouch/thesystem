@@ -218,8 +218,19 @@ function proxyRequest(
   const chunks: Buffer[] = [];
   req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
   req.on('end', async () => {
-    const body = Buffer.concat(chunks);
+    let body: Buffer = Buffer.concat(chunks);
     const model = extractModel(body);
+
+    // Strip unsupported parameters for Anthropic API (context_management requires special access)
+    if (provider === 'anthropic' && body.length > 0) {
+      try {
+        const json = JSON.parse(body.toString());
+        if (json.context_management) {
+          delete json.context_management;
+          body = Buffer.from(JSON.stringify(json));
+        }
+      } catch { /* not JSON, pass through */ }
+    }
 
     try {
       const apiKey = await readKeyFromKeychain(provider);
