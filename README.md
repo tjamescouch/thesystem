@@ -1,5 +1,7 @@
 # thesystem
 
+<img width="280" height="277" alt="Screenshot 2026-02-22 at 1 46 26 PM" src="https://github.com/user-attachments/assets/a1f9e22c-ec58-41f9-aa7c-363f3b2656f0" />
+
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![GitHub all releases](https://img.shields.io/github/downloads/tjamescouch/thesystem/total)
 ![v0.2.0](https://img.shields.io/github/downloads/tjamescouch/thesystem/v0.2.0/total)
