@@ -438,11 +438,12 @@ export class Orchestrator {
     for (const backend of backends) {
       // Determine the agent command for this provider
       const command = this.agentCommandForProvider(backend.provider, backend.model);
+      const modelFlag = backend.model ? ` -m ${backend.model}` : '';
 
       console.log(`[thesystem]   ${backend.provider}: ${backend.count} agent(s)${backend.model ? ` (model: ${backend.model})` : ''}`);
 
       await this.daemonize(
-        `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentswarm start --server ${serverUrl} --count ${backend.count} --channels "${channels}" --role ${backend.provider} --base-path /tmp/thesystem-agents --command "${command}"`,
+        `export ${tokenVar}=$(cat /run/thesystem/agent-token) && agentswarm start --server ${serverUrl} --count ${backend.count} --channels "${channels}" --role ${backend.provider} --base-path /tmp/thesystem-agents --command "${command}${modelFlag}"`,
         `/tmp/agentctl-swarm-${backend.provider}.log`
       );
     }
@@ -466,8 +467,7 @@ export class Orchestrator {
       ? ''  // gro will infer provider from model prefix
       : provider;
     const providerFlag = groProvider ? ` -P ${groProvider}` : '';
-    const modelFlag = model ? ` -m ${model}` : '';
-    return `gro${providerFlag}${modelFlag} --bash --persistent`;
+    return `gro${providerFlag} --bash --persistent`;
   }
 
   private async daemonize(command: string, logFile: string): Promise<void> {
