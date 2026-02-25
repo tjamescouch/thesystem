@@ -49,7 +49,7 @@ export class Orchestrator {
 
     // Forward host env vars matching known prefixes into the VM script
     // SECURITY: Strip vars containing secrets — agents use agentauth proxy instead
-    const envForwardRegex = /^(ANTHROPIC_|OPENAI_|XAI_|GROK_|GOOGLE_|GEMINI_|MISTRAL_|GROQ_|DEEPSEEK_|THESYSTEM_|AGENTCHAT_|CLAUDE_CODE_)/;
+    const envForwardRegex = /^(ANTHROPIC_|OPENAI_|XAI_|GROK_|GOOGLE_|GEMINI_|MISTRAL_|GROQ_|DEEPSEEK_|THESYSTEM_|AGENTCHAT_|CLAUDE_CODE_|NTFY$|NIKI_)/;
     const envExports = Object.entries(process.env)
       .filter(([k]) => envForwardRegex.test(k) && !SECRET_ENV_VARS.has(k))
       .map(([k, v]) => `export ${k}='${(v || '').replace(/'/g, "'\\''")}'`)
