@@ -8,6 +8,8 @@
 
 Install it and you have a dev shop.
 
+> **Cost warning:** Running multiple AI agents in parallel can consume API credits very quickly. A swarm of agents making concurrent LLM calls can cost hundreds of dollars per hour. Always set spend limits with your API provider before starting multi-agent workloads. Use `--max-cost` flags where available and start with a small agent count to understand your burn rate.
+
 ## Quick Start
 
 ```bash
