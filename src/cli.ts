@@ -579,12 +579,22 @@ Usage:
       ];
       const envFlags = envPairs.map(([k, v]) => `-e ${k}=${v}`).join(' ');
 
-      // Default to -c (continue/resume session); --no-continue falls back to -i (fresh)
-      const groModeFlag = noContinue ? '-i' : '-c';
-      const escapedGroArgs = groArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
-      const groCmd = groArgs.length > 0 ? `${groModeFlag} ${escapedGroArgs}` : groModeFlag;
+      // Persistent volume for gro sessions (survives --rm containers)
+      const groVolume = '/tmp/thesystem-gro-state';
 
-      const runScript = `podman run -it --rm --network host ${envFlags} thesystem-gro:latest ${groCmd}`;
+      // Default to -c (continue/resume session); --no-continue forces -i (fresh).
+      // When using -c, fall back to -i if there's no session to resume.
+      const escapedGroArgs = groArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+      const extraArgs = groArgs.length > 0 ? ` ${escapedGroArgs}` : '';
+
+      let runScript: string;
+      if (noContinue) {
+        runScript = `mkdir -p ${groVolume} && podman run -it --rm --network host -v ${groVolume}:/home/node/.gro ${envFlags} thesystem-gro:latest -i${extraArgs}`;
+      } else {
+        // Try -c first; if it fails (no session), retry with -i
+        runScript = `mkdir -p ${groVolume} && podman run -it --rm --network host -v ${groVolume}:/home/node/.gro ${envFlags} thesystem-gro:latest -c${extraArgs} || podman run -it --rm --network host -v ${groVolume}:/home/node/.gro ${envFlags} thesystem-gro:latest -i${extraArgs}`;
+      }
+
       const runChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', runScript], {
         stdio: 'inherit',
       });
