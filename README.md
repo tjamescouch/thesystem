@@ -289,12 +289,18 @@ thesystem gro -P openai -m gpt-4.1
 thesystem gro -P groq -m llama-3.3-70b-versatile
 thesystem gro -P xai -m grok-4
 
-# Start a fresh session (no resume)
+# Start a fresh session (no resume) — equivalent to `claude -p` behavior
 thesystem gro --no-continue
 
 # Force rebuild the container image (pick up new gro versions after npm publish)
 thesystem gro --rebuild
 ```
+
+| Flag | Behavior | Similar to |
+|------|----------|------------|
+| *(default)* | Resume last session | `claude --continue` |
+| `--no-continue` | Start a fresh session | `claude -p` |
+| `--rebuild` | Rebuild container image | — |
 
 Any additional flags are forwarded directly to gro — see `gro --help` for the full list (e.g. `--bash`, `--context-tokens`, `--max-cost`).
 
