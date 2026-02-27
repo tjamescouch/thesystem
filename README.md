@@ -273,26 +273,32 @@ The VM protects your Mac from the managed agents. If a managed agent goes rogue,
 - `~/dev` is mounted **read-only**. Agents write to their own workspace inside the container.
 - In **server mode** with public access, keep the attack surface minimal — the server accepts inbound connections.
 
-## Interactive gro Sessions
+## Interactive Mode
 
-`thesystem gro` drops you into an interactive gro session running in an isolated Podman container inside the Lima VM. All API calls route through the agentauth proxy — no keys enter the VM or container.
+`thesystem gro` drops you into an interactive [gro](https://github.com/tjamescouch/gro) session running in an isolated Podman container inside the Lima VM. The full path is: **macOS → Lima VM → Podman container → gro -c**.
+
+All API calls route through the agentauth proxy — no keys enter the VM or container. Sessions are persisted in a named Podman volume so they survive across container restarts.
 
 ```bash
-# Resume your last session (default)
+# Resume your last session (default behavior)
 thesystem gro
 
-# Use a specific provider
+# Use a specific provider and model
 thesystem gro -P openai
+thesystem gro -P openai -m gpt-4.1
 thesystem gro -P groq -m llama-3.3-70b-versatile
+thesystem gro -P xai -m grok-4
 
-# Start fresh (no session resume)
+# Start a fresh session (no resume)
 thesystem gro --no-continue
 
-# Force rebuild the container image (e.g. after a gro update)
+# Force rebuild the container image (pick up new gro versions after npm publish)
 thesystem gro --rebuild
 ```
 
-The container image (`thesystem-gro`) is built on first run and cached. Use `--rebuild` to pick up new gro versions.
+Any additional flags are forwarded directly to gro — see `gro --help` for the full list (e.g. `--bash`, `--context-tokens`, `--max-cost`).
+
+The container image (`thesystem-gro`) is built on first run from `node:20-slim` + `@tjamescouch/gro` and cached. Use `--rebuild` after a gro update to pull the latest version from npm.
 
 ## Prerequisites
 
