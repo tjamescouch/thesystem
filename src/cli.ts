@@ -579,11 +579,10 @@ Usage:
       ];
       const envFlags = envPairs.map(([k, v]) => `-e ${k}=${v}`).join(' ');
 
-      // Persistent volume for gro sessions (survives --rm containers).
-      // UID 1000 = "node" user inside the container.
-      const groVolume = '/tmp/thesystem-gro-state';
-      const volSetup = `mkdir -p ${groVolume} && chown 1000:1000 ${groVolume}`;
-      const volMount = `-v ${groVolume}:/home/node/.gro`;
+      // Named podman volume for persistent gro sessions.
+      // Podman manages ownership for rootless containers automatically.
+      const volSetup = `podman volume exists thesystem-gro 2>/dev/null || podman volume create thesystem-gro`;
+      const volMount = `-v thesystem-gro:/home/node/.gro`;
 
       // Default to -c (continue/resume session); --no-continue forces -i (fresh).
       // When using -c, fall back to -i if there's no session to resume.
