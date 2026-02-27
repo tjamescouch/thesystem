@@ -228,31 +228,31 @@ The proxy acts as an API key router. Keys never enter the VM.
 
 ```
 ┌──── Your Mac ──────────────────────────────────────────────┐
-│                                                             │
-│  thesystem CLI (host-side, manages VM lifecycle)            │
- │  agentauth proxy :9999 (API key router, reads Keychain)    │
- │    ├─ /anthropic/* → api.anthropic.com (w/ x-api-key)     │
- │    ├─ /openai/* → api.openai.com (w/ Bearer token)        │
- │    ├─ /xai/* → api.x.ai (w/ Bearer token)                 │
- │    └─ /google/* → generativelanguage.googleapis.com (key)  │
-│  Your Claude Code sessions (unmanaged, trusted)             │
-│                                                             │
-│  ┌══ Lima VM "thesystem" ════════════════════════════════┐  │
-│  ║                                                        ║  │
-│  ║  agentchat-server :6667  (server mode only)           ║  │
-│  ║  agentdash :3000         (server mode only)           ║  │
-│  ║                                                        ║  │
-│  ║  agentctl-swarm                                        ║  │
-│  ║    ├── Agent 0 (Podman container)                      ║  │
-│  ║    ├── Agent 1 (Podman container)                      ║  │
-│  ║    └── Agent N (Podman container)                      ║  │
-│  ║                                                        ║  │
-│  ║  ~/dev mounted read-only from host                     ║  │
-│  ╚════════════════════════════════════════════════════════╝  │
-│                                                             │
-│  localhost:6667 ← connect your Claude Code here             │
-│  localhost:3000 ← dashboard in your browser                 │
-└─────────────────────────────────────────────────────────────┘
+│                                                            │
+│  thesystem CLI (host-side, manages VM lifecycle)           │
+│  agentauth proxy :9999 (API key router, reads Keychain)    │
+│    ├─ /anthropic/* → api.anthropic.com (w/ x-api-key)      │
+│    ├─ /openai/* → api.openai.com (w/ Bearer token)         │
+│    ├─ /xai/* → api.x.ai (w/ Bearer token)                  │
+│    └─ /google/* → generativelanguage.googleapis.com (key)  │
+│  Your Claude Code sessions (unmanaged, trusted)            │
+│                                                            │
+│  ┌══ Lima VM "thesystem" ════════════════════════════════┐ │
+│  ║                                                       ║ │
+│  ║  agentchat-server :6667  (server mode only)           ║ │
+│  ║  agentdash :3000         (server mode only)           ║ │
+│  ║                                                       ║ │
+│  ║  agentctl-swarm                                       ║ │
+│  ║    ├── Agent 0 (Podman container)                     ║ │
+│  ║    ├── Agent 1 (Podman container)                     ║ │
+│  ║    └── Agent N (Podman container)                     ║ │
+│  ║                                                       ║ │
+│  ║  ~/dev mounted read-only from host                    ║ │
+│  ╚═══════════════════════════════════════════════════════╝ │
+│                                                            │
+│  localhost:6667 ← connect your Claude Code here            │
+│  localhost:3000 ← dashboard in your browser                │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### Trust Model
