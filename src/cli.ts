@@ -534,7 +534,7 @@ Usage:
         'export PATH="$HOME/.npm-global/bin:$PATH"',
         `if ! ${imageCheck}; then`,
         `  echo '[thesystem] Building gro container image...'`,
-        `  podman build -t thesystem-gro:latest -f- /tmp <<'CONTAINERFILE_EOF'`,
+        `  podman build --no-cache -t thesystem-gro:latest -f- /tmp <<'CONTAINERFILE_EOF'`,
         'FROM node:20-slim',
         'RUN npm install -g @tjamescouch/gro && npm cache clean --force',
         'USER node',
