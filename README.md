@@ -73,6 +73,9 @@ thesystem config                  Show resolved configuration
 thesystem logs [svc]              Tail logs (server, dashboard, swarm)
 thesystem version                 Show version
 thesystem reinstall               Reinstall all components inside the VM
+thesystem gro [args...]           Run gro in a pod (resumes last session)
+thesystem gro --no-continue       Start a fresh gro session (no resume)
+thesystem gro --rebuild           Force rebuild the gro container image
 thesystem go                      Open interactive shell inside the VM
 thesystem keys set <provider> <key>   Store API key in macOS Keychain
 thesystem keys get <provider>         Read API key from macOS Keychain
@@ -267,6 +270,27 @@ The VM protects your Mac from the managed agents. If a managed agent goes rogue,
 - The agentauth proxy auto-starts with `thesystem start` — no manual step required.
 - `~/dev` is mounted **read-only**. Agents write to their own workspace inside the container.
 - In **server mode** with public access, keep the attack surface minimal — the server accepts inbound connections.
+
+## Interactive gro Sessions
+
+`thesystem gro` drops you into an interactive gro session running in an isolated Podman container inside the Lima VM. All API calls route through the agentauth proxy — no keys enter the VM or container.
+
+```bash
+# Resume your last session (default)
+thesystem gro
+
+# Use a specific provider
+thesystem gro -P openai
+thesystem gro -P groq -m llama-3.3-70b-versatile
+
+# Start fresh (no session resume)
+thesystem gro --no-continue
+
+# Force rebuild the container image (e.g. after a gro update)
+thesystem gro --rebuild
+```
+
+The container image (`thesystem-gro`) is built on first run and cached. Use `--rebuild` to pick up new gro versions.
 
 ## Prerequisites
 

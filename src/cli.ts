@@ -35,7 +35,11 @@ Usage:
   thesystem daemon status       Show daemon status
   thesystem version             Show version
   thesystem reinstall           Reinstall components inside VM
+  thesystem gro [args...]       Run gro in a pod (resumes last session by default)
+  thesystem gro --no-continue   Start a fresh gro session (no resume)
+  thesystem gro --rebuild       Force rebuild the gro container image
   thesystem go                  Open an interactive shell inside the VM
+  thesystem agentctl <cmd>      Run agentctl commands inside the VM
   thesystem keys set            Store API keys in macOS Keychain
   thesystem keys get            Read API keys from macOS Keychain (prints to stdout)
   thesystem agentauth           Run local agentauth proxy (required for swarm)
@@ -495,6 +499,105 @@ Usage:
       break;
     }
 
+    case 'gro': {
+      // Run gro interactive mode in a podman container inside the VM.
+      // Flow: macOS → limactl shell → podman run -it → gro -c (continue session)
+      // Usage: thesystem gro [gro-args...]
+      //   e.g. thesystem gro -P openai
+      //        thesystem gro -P groq -m llama-3.3-70b-versatile
+      //        thesystem gro --no-continue   (fresh session instead of resuming)
+      //        thesystem gro --rebuild       (force rebuild container image)
+      const vmName = 'thesystem';
+      const rebuild = args.includes('--rebuild');
+      const noContinue = args.includes('--no-continue');
+      const groArgs = args.slice(1).filter(a => a !== '--' && a !== '--rebuild' && a !== '--no-continue');
+
+      const orchestrator = new Orchestrator();
+      const running = await orchestrator.isVmRunning();
+      if (!running) {
+        console.error('[thesystem] VM is not running. Start it first: thesystem start');
+        process.exit(1);
+      }
+
+      // Check agentauth proxy is healthy
+      const proxyPort = process.env.AGENTAUTH_PORT || '9999';
+      try {
+        await exec('curl', ['-sf', `http://localhost:${proxyPort}/agentauth/health`], { timeout: 2000 });
+      } catch {
+        console.error(`[thesystem] agentauth proxy not running on :${proxyPort}. Run: thesystem agentauth start`);
+        process.exit(1);
+      }
+
+      // Build container image inside VM if not present (or --rebuild)
+      const imageCheck = rebuild ? 'false' : 'podman image exists thesystem-gro:latest 2>/dev/null';
+      const buildScript = [
+        'export PATH="$HOME/.npm-global/bin:$PATH"',
+        `if ! ${imageCheck}; then`,
+        `  echo '[thesystem] Building gro container image...'`,
+        `  podman build -t thesystem-gro:latest -f- /tmp <<'CONTAINERFILE_EOF'`,
+        'FROM node:20-slim',
+        'RUN npm install -g @tjamescouch/gro && npm cache clean --force',
+        'USER node',
+        'WORKDIR /home/node',
+        'ENTRYPOINT ["gro"]',
+        'CMD ["-i"]',
+        'CONTAINERFILE_EOF',
+        `  echo '[thesystem] Image built.'`,
+        'else',
+        `  echo '[thesystem] Image ready.'`,
+        'fi',
+      ].join('\n');
+
+      const buildChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', buildScript], {
+        stdio: 'inherit',
+      });
+      await new Promise<void>((resolve, reject) => {
+        buildChild.on('close', (code) => {
+          if (code !== 0) reject(new Error(`Image build failed with code ${code}`));
+          else resolve();
+        });
+        buildChild.on('error', reject);
+      });
+
+      // Build env flags for all provider proxies
+      const proxyBase = `http://host.lima.internal:${proxyPort}`;
+      const envPairs: [string, string][] = [
+        ['ANTHROPIC_BASE_URL', `${proxyBase}/anthropic`],
+        ['ANTHROPIC_API_KEY', 'proxy-managed'],
+        ['OPENAI_BASE_URL', `${proxyBase}/openai`],
+        ['OPENAI_API_KEY', 'proxy-managed'],
+        ['XAI_BASE_URL', `${proxyBase}/xai`],
+        ['XAI_API_KEY', 'proxy-managed'],
+        ['GROQ_BASE_URL', `${proxyBase}/groq`],
+        ['GROQ_API_KEY', 'proxy-managed'],
+        ['GOOGLE_BASE_URL', `${proxyBase}/google`],
+        ['GOOGLE_API_KEY', 'proxy-managed'],
+        ['DEEPSEEK_BASE_URL', `${proxyBase}/deepseek`],
+        ['DEEPSEEK_API_KEY', 'proxy-managed'],
+        ['MISTRAL_BASE_URL', `${proxyBase}/mistral`],
+        ['MISTRAL_API_KEY', 'proxy-managed'],
+      ];
+      const envFlags = envPairs.map(([k, v]) => `-e ${k}=${v}`).join(' ');
+
+      // Default to -c (continue/resume session); --no-continue falls back to -i (fresh)
+      const groModeFlag = noContinue ? '-i' : '-c';
+      const escapedGroArgs = groArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+      const groCmd = groArgs.length > 0 ? `${groModeFlag} ${escapedGroArgs}` : groModeFlag;
+
+      const runScript = `podman run -it --rm --network host ${envFlags} thesystem-gro:latest ${groCmd}`;
+      const runChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', runScript], {
+        stdio: 'inherit',
+      });
+      await new Promise<void>((resolve, reject) => {
+        runChild.on('close', (code) => {
+          if (code !== 0 && code !== null) reject(new Error(`gro exited with code ${code}`));
+          else resolve();
+        });
+        runChild.on('error', reject);
+      });
+      break;
+    }
+
     case 'go': {
       // Open an interactive shell inside the VM.
       // Uses --workdir /home to avoid the Lima cwd-mount issue (Lima maps your
@@ -509,6 +612,52 @@ Usage:
           else resolve();
         });
         child.on('error', reject);
+      });
+      break;
+    }
+
+    case 'agentctl': {
+      // Forward agentctl commands into the VM with proper environment.
+      // Usage: thesystem agentctl start Samantha "Hi Samantha"
+      //        thesystem agentctl -- start Samantha "Hi Samantha"
+      const vmName = 'thesystem';
+      const agentctlArgs = args.slice(1).filter(a => a !== '--');
+
+      if (agentctlArgs.length === 0) {
+        console.error('Usage: thesystem agentctl <command> [args...]');
+        console.error('Example: thesystem agentctl start Samantha "Hi Samantha"');
+        process.exit(1);
+      }
+
+      const orchestrator = new Orchestrator();
+      const running = await orchestrator.isVmRunning();
+      if (!running) {
+        console.error('[thesystem] VM is not running. Start it first: thesystem start');
+        process.exit(1);
+      }
+
+      const proxyPort = process.env.AGENTAUTH_PORT || '9999';
+      const envSetup = [
+        'export PATH="$HOME/.npm-global/bin:$PATH"',
+        `export ANTHROPIC_BASE_URL='http://host.lima.internal:${proxyPort}/anthropic'`,
+        `export ANTHROPIC_API_KEY='proxy-managed'`,
+        `export AGENTCHAT_PUBLIC=true`,
+        // Read token from thesystem start if available
+        'if [ -f /run/thesystem/agent-token ]; then export CLAUDE_CODE_OAUTH_TOKEN=$(cat /run/thesystem/agent-token); fi',
+      ].join('; ');
+
+      const escapedArgs = agentctlArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+      const cmd = `${envSetup}; exec agentctl ${escapedArgs}`;
+
+      const agentctlChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', cmd], {
+        stdio: 'inherit',
+      });
+      await new Promise<void>((resolve, reject) => {
+        agentctlChild.on('close', (code) => {
+          if (code !== 0) reject(new Error(`agentctl exited with code ${code}`));
+          else resolve();
+        });
+        agentctlChild.on('error', reject);
       });
       break;
     }

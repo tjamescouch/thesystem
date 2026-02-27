@@ -24,6 +24,7 @@ the user-facing command-line interface.
 - `thesystem keys set <provider> <key>` — store/update API key in macOS Keychain
 - `thesystem keys get <provider>` — read API key from macOS Keychain (prints to stdout)
 - `thesystem agentauth [start]` — start the host-side agentauth proxy (reads Keychain, required for swarm)
+- `thesystem gro [args...]` — run gro interactive in a Podman container inside the VM (resumes last session by default, `--no-continue` for fresh, `--rebuild` to rebuild image)
 
 ### not yet implemented ❌
 - `thesystem keys rotate` — rotate key in Keychain and restart proxy
