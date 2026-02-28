@@ -515,7 +515,8 @@ Usage:
       const rebuild = args.includes('--rebuild');
       const noContinue = args.includes('--no-continue');
       const devMode = args.includes('--dev');
-      const groArgs = args.slice(1).filter(a => a !== '--' && a !== '--rebuild' && a !== '--no-continue' && a !== '--dev');
+      const plasticMode = args.includes('--plastic');
+      const groArgs = args.slice(1).filter(a => a !== '--' && a !== '--rebuild' && a !== '--no-continue' && a !== '--dev' && a !== '--plastic');
 
       const orchestrator = new Orchestrator();
       const running = await orchestrator.isVmRunning();
@@ -583,6 +584,9 @@ Usage:
         ['MISTRAL_BASE_URL', `${proxyBase}/mistral`],
         ['MISTRAL_API_KEY', 'proxy-managed'],
       ];
+      if (plasticMode) {
+        envPairs.push(['GRO_PLASTIC', '1']);
+      }
       const envFlags = envPairs.map(([k, v]) => `-e ${k}=${v}`).join(' ');
 
       // Named podman volume for persistent gro sessions.
@@ -606,7 +610,22 @@ Usage:
       const podmanBase = `podman run -it --rm --network host ${volMount} ${devMount} ${envFlags} thesystem-gro:latest`;
 
       let runScript: string;
-      if (noContinue) {
+      if (plasticMode) {
+        // PLASTIC mode: restart on exit code 75 (@@reboot@@ marker), up to 20 times
+        if (plasticMode) console.log('[thesystem] PLASTIC mode: self-modification enabled, auto-restart on @@reboot@@');
+        const groCmd = noContinue
+          ? `${podmanBase} -i --plastic${extraArgs}`
+          : `${podmanBase} -c --plastic${extraArgs} || ${podmanBase} -i --plastic${extraArgs}`;
+        runScript = [
+          volSetup,
+          `&& COUNT=0; MAX=20; while [ $COUNT -lt $MAX ]; do`,
+          `  ${groCmd}; EXIT=$?;`,
+          `  if [ $EXIT -ne 75 ]; then exit $EXIT; fi;`,
+          `  COUNT=$((COUNT + 1));`,
+          `  echo "[plastic-runner] Reboot $COUNT/$MAX";`,
+          `done; echo "[plastic-runner] Max reboots reached"; exit 1`,
+        ].join(' ');
+      } else if (noContinue) {
         runScript = `${volSetup} && ${podmanBase} -i${extraArgs}`;
       } else {
         // Try -c first; if it fails (no session), retry with -i
