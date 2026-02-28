@@ -39,6 +39,9 @@ Usage:
   thesystem gro --no-continue   Start a fresh gro session (no resume)
   thesystem gro --rebuild       Force rebuild the gro container image
   thesystem gro --dev           Mount host gro source for rapid iteration (no publish needed)
+  thesystem gtui [args...]      Run gtui (TUI for gro) in a pod
+  thesystem gtui --rebuild      Force rebuild the gtui container image
+  thesystem gtui --dev          Mount host gro+gtui source for rapid iteration
   thesystem go                  Open an interactive shell inside the VM
   thesystem agentctl <cmd>      Run agentctl commands inside the VM
   thesystem keys set            Store API keys in macOS Keychain
@@ -619,6 +622,111 @@ Usage:
           else resolve();
         });
         runChild.on('error', reject);
+      });
+      break;
+    }
+
+    case 'gtui': {
+      // Run gtui (TUI for gro) in a podman container inside the VM.
+      // gtui spawns gro internally, so the container needs both packages.
+      // Usage: thesystem gtui [gtui-args...]
+      //   e.g. thesystem gtui --provider openai --model gpt-4.1
+      //        thesystem gtui --rebuild       (force rebuild container image)
+      const vmName = 'thesystem';
+      const rebuild = args.includes('--rebuild');
+      const devMode = args.includes('--dev');
+      const gtuiArgs = args.slice(1).filter(a => a !== '--' && a !== '--rebuild' && a !== '--dev');
+
+      const orchestrator = new Orchestrator();
+      const running = await orchestrator.isVmRunning();
+      if (!running) {
+        console.error('[thesystem] VM is not running. Start it first: thesystem start');
+        process.exit(1);
+      }
+
+      // Check agentauth proxy is healthy
+      const proxyPort = process.env.AGENTAUTH_PORT || '9999';
+      try {
+        await exec('curl', ['-sf', `http://localhost:${proxyPort}/agentauth/health`], { timeout: 2000 });
+      } catch {
+        console.error(`[thesystem] agentauth proxy not running on :${proxyPort}. Run: thesystem agentauth start`);
+        process.exit(1);
+      }
+
+      // Build container image (includes both gro and gtui)
+      const imageCheck = rebuild ? 'false' : 'podman image exists thesystem-gtui:latest 2>/dev/null';
+      const buildScript = [
+        'export PATH="$HOME/.npm-global/bin:$PATH"',
+        `if ! ${imageCheck}; then`,
+        `  echo '[thesystem] Building gtui container image...'`,
+        `  podman build --no-cache -t thesystem-gtui:latest -f- /tmp <<'CONTAINERFILE_EOF'`,
+        'FROM node:20-slim',
+        'RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*',
+        'RUN npm install -g @tjamescouch/gro @tjamescouch/gtui && npm cache clean --force',
+        'USER node',
+        'WORKDIR /home/node',
+        'ENTRYPOINT ["gtui"]',
+        'CONTAINERFILE_EOF',
+        `  echo '[thesystem] Image built.'`,
+        'else',
+        `  echo '[thesystem] Image ready.'`,
+        'fi',
+      ].join('\n');
+
+      const buildChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', buildScript], {
+        stdio: 'inherit',
+      });
+      await new Promise<void>((resolve, reject) => {
+        buildChild.on('close', (code) => {
+          if (code !== 0) reject(new Error(`Image build failed with code ${code}`));
+          else resolve();
+        });
+        buildChild.on('error', reject);
+      });
+
+      // Build env flags for all provider proxies
+      const gtuiProxyBase = `http://host.lima.internal:${proxyPort}`;
+      const gtuiEnvPairs: [string, string][] = [
+        ['ANTHROPIC_BASE_URL', `${gtuiProxyBase}/anthropic`],
+        ['ANTHROPIC_API_KEY', 'proxy-managed'],
+        ['OPENAI_BASE_URL', `${gtuiProxyBase}/openai`],
+        ['OPENAI_API_KEY', 'proxy-managed'],
+        ['XAI_BASE_URL', `${gtuiProxyBase}/xai`],
+        ['XAI_API_KEY', 'proxy-managed'],
+        ['GROQ_BASE_URL', `${gtuiProxyBase}/groq`],
+        ['GROQ_API_KEY', 'proxy-managed'],
+        ['GOOGLE_BASE_URL', `${gtuiProxyBase}/google`],
+        ['GOOGLE_API_KEY', 'proxy-managed'],
+        ['DEEPSEEK_BASE_URL', `${gtuiProxyBase}/deepseek`],
+        ['DEEPSEEK_API_KEY', 'proxy-managed'],
+        ['MISTRAL_BASE_URL', `${gtuiProxyBase}/mistral`],
+        ['MISTRAL_API_KEY', 'proxy-managed'],
+      ];
+      const gtuiEnvFlags = gtuiEnvPairs.map(([k, v]) => `-e ${k}=${v}`).join(' ');
+
+      // Reuse gro's volume for session persistence (gtui spawns gro internally)
+      const gtuiVolSetup = `podman volume exists thesystem-gro 2>/dev/null || podman volume create thesystem-gro`;
+      const gtuiVolMount = `-v thesystem-gro:/home/node/.gro`;
+
+      // --dev: bind-mount host gro + gtui source over the container's global installs.
+      const gtuiDevMount = devMode
+        ? `-v /home/jamescouch.linux/dev/gro:/usr/local/lib/node_modules/@tjamescouch/gro:ro -v /home/jamescouch.linux/dev/claude/gtui:/usr/local/lib/node_modules/@tjamescouch/gtui:ro`
+        : '';
+      if (devMode) console.log('[thesystem] Dev mode: mounting host gro+gtui source into container');
+
+      const escapedGtuiArgs = gtuiArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+      const gtuiExtraArgs = gtuiArgs.length > 0 ? ` ${escapedGtuiArgs}` : '';
+      const gtuiRunScript = `${gtuiVolSetup} && podman run -it --rm --network host ${gtuiVolMount} ${gtuiDevMount} ${gtuiEnvFlags} thesystem-gtui:latest${gtuiExtraArgs}`;
+
+      const gtuiRunChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', gtuiRunScript], {
+        stdio: 'inherit',
+      });
+      await new Promise<void>((resolve, reject) => {
+        gtuiRunChild.on('close', (code) => {
+          if (code !== 0 && code !== null) reject(new Error(`gtui exited with code ${code}`));
+          else resolve();
+        });
+        gtuiRunChild.on('error', reject);
       });
       break;
     }
