@@ -38,6 +38,7 @@ Usage:
   thesystem gro [args...]       Run gro in a pod (resumes last session by default)
   thesystem gro --no-continue   Start a fresh gro session (no resume)
   thesystem gro --rebuild       Force rebuild the gro container image
+  thesystem gro --dev           Mount host gro source for rapid iteration (no publish needed)
   thesystem go                  Open an interactive shell inside the VM
   thesystem agentctl <cmd>      Run agentctl commands inside the VM
   thesystem keys set            Store API keys in macOS Keychain
@@ -510,7 +511,8 @@ Usage:
       const vmName = 'thesystem';
       const rebuild = args.includes('--rebuild');
       const noContinue = args.includes('--no-continue');
-      const groArgs = args.slice(1).filter(a => a !== '--' && a !== '--rebuild' && a !== '--no-continue');
+      const devMode = args.includes('--dev');
+      const groArgs = args.slice(1).filter(a => a !== '--' && a !== '--rebuild' && a !== '--no-continue' && a !== '--dev');
 
       const orchestrator = new Orchestrator();
       const running = await orchestrator.isVmRunning();
@@ -585,11 +587,20 @@ Usage:
       const volSetup = `podman volume exists thesystem-gro 2>/dev/null || podman volume create thesystem-gro`;
       const volMount = `-v thesystem-gro:/home/node/.gro`;
 
+      // --dev: bind-mount host gro source over the container's global install.
+      // Lima mounts /Users/jamescouch/dev → /home/jamescouch.linux/dev (read-only).
+      // This overlays the host's latest tsc build so changes are picked up instantly
+      // without npm publish or container rebuild.
+      const devMount = devMode
+        ? `-v /home/jamescouch.linux/dev/gro:/usr/local/lib/node_modules/@tjamescouch/gro:ro`
+        : '';
+      if (devMode) console.log('[thesystem] Dev mode: mounting host gro source into container');
+
       // Default to -c (continue/resume session); --no-continue forces -i (fresh).
       // When using -c, fall back to -i if there's no session to resume.
       const escapedGroArgs = groArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       const extraArgs = groArgs.length > 0 ? ` ${escapedGroArgs}` : '';
-      const podmanBase = `podman run -it --rm --network host ${volMount} ${envFlags} thesystem-gro:latest`;
+      const podmanBase = `podman run -it --rm --network host ${volMount} ${devMount} ${envFlags} thesystem-gro:latest`;
 
       let runScript: string;
       if (noContinue) {
