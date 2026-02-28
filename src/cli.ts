@@ -613,9 +613,12 @@ Usage:
       if (plasticMode) {
         // PLASTIC mode: restart on exit code 75 (@@reboot@@ marker), up to 20 times
         if (plasticMode) console.log('[thesystem] PLASTIC mode: self-modification enabled, auto-restart on @@reboot@@');
+        // For the restart loop, we must NOT use || fallback — it swallows exit code 75.
+        // Instead, check the exit code explicitly: propagate 75 for restart,
+        // fall back to -i only for other failures (e.g. no session to continue).
         const groCmd = noContinue
           ? `${podmanBase} -i --plastic${extraArgs}`
-          : `${podmanBase} -c --plastic${extraArgs} || ${podmanBase} -i --plastic${extraArgs}`;
+          : `${podmanBase} -c --plastic${extraArgs}; RC=$?; if [ $RC -eq 75 ]; then exit 75; fi; if [ $RC -ne 0 ]; then ${podmanBase} -i --plastic${extraArgs}; fi`;
         runScript = [
           volSetup,
           `&& COUNT=0; MAX=20; while [ $COUNT -lt $MAX ]; do`,
