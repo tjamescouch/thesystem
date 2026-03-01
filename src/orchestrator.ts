@@ -376,6 +376,50 @@ export class Orchestrator {
     throw new Error(`agentauth proxy failed to start on port ${proxyPort}. Run: thesystem agentauth start`);
   }
 
+  private async ensureWormholeRelay(): Promise<void> {
+    const port = process.env.WORMHOLE_PORT || '8787';
+    const url = `http://localhost:${port}/transfer/health-check`;
+
+    // Check if already running
+    try {
+      await exec('curl', ['-sf', url], { timeout: 2000 });
+      return; // Already up (or at least responding on the port)
+    } catch {
+      // Not running — auto-start it
+    }
+
+    // Check if wormhole CLI is available
+    try {
+      await exec('which', ['wormhole'], { timeout: 2000 });
+    } catch {
+      console.log('[thesystem] wormhole not installed — skipping relay (npm i -g @tjamescouch/wormhole)');
+      return;
+    }
+
+    console.log('[thesystem] Starting wormhole relay...');
+    const child = spawn('wormhole', ['relay', '--relay', `:${port}`], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    child.unref();
+
+    // Wait for relay to become ready (up to 5s)
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 300));
+      try {
+        // wormhole relay returns 404 on unknown paths but the port is open
+        await exec('curl', ['-sf', '-o', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 1000 });
+        console.log(`[thesystem] wormhole relay ready on :${port}`);
+        return;
+      } catch {
+        // Still starting
+      }
+    }
+    console.log(`[thesystem] wormhole relay may not have started on :${port} — continuing anyway`);
+  }
+
   private async startServices(config: SystemConfig): Promise<void> {
     await this.installIfNeeded(config);
 
@@ -426,6 +470,8 @@ export class Orchestrator {
     await this.ensureAgentAuthProxy();
     const proxyPort = process.env.AGENTAUTH_PORT || String(AGENTAUTH_PORT);
     console.log(`[thesystem] agentauth proxy ready on :${proxyPort}`);
+
+    await this.ensureWormholeRelay();
 
     // Resolve backends: use explicit backends array, or synthesize from legacy backend + agents
     const backends: SwarmBackend[] = config.swarm.backends && config.swarm.backends.length > 0

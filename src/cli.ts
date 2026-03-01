@@ -534,6 +534,26 @@ Usage:
         process.exit(1);
       }
 
+      // Ensure wormhole relay is running (non-blocking — pods can work without it)
+      const wormholePort = process.env.WORMHOLE_PORT || '8787';
+      try {
+        await exec('curl', ['-sf', `http://localhost:${wormholePort}/`], { timeout: 2000 });
+        console.log(`[thesystem] wormhole relay on :${wormholePort}`);
+      } catch {
+        try {
+          await exec('which', ['wormhole'], { timeout: 2000 });
+          console.log('[thesystem] Starting wormhole relay...');
+          const wormholeChild = spawn('wormhole', ['relay', '--relay', `:${wormholePort}`], {
+            detached: true, stdio: 'ignore', env: { ...process.env },
+          });
+          wormholeChild.unref();
+          await new Promise(r => setTimeout(r, 1500));
+          console.log(`[thesystem] wormhole relay started on :${wormholePort}`);
+        } catch {
+          console.log('[thesystem] wormhole not installed — skipping relay (npm i -g @tjamescouch/wormhole)');
+        }
+      }
+
       // Build container image inside VM if not present (or --rebuild)
       const imageCheck = rebuild ? 'false' : 'podman image exists thesystem-gro:latest 2>/dev/null';
       const buildScript = [
@@ -543,7 +563,7 @@ Usage:
         `  podman build --no-cache -t thesystem-gro:latest -f- /tmp <<'CONTAINERFILE_EOF'`,
         'FROM node:20-slim',
         'RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*',
-        'RUN npm install -g @tjamescouch/gro agentpatch && npm cache clean --force',
+        'RUN npm install -g @tjamescouch/gro agentpatch @tjamescouch/wormhole && npm cache clean --force',
         'USER node',
         'WORKDIR /home/node',
         'ENTRYPOINT ["gro"]',
@@ -583,6 +603,7 @@ Usage:
         ['DEEPSEEK_API_KEY', 'proxy-managed'],
         ['MISTRAL_BASE_URL', `${proxyBase}/mistral`],
         ['MISTRAL_API_KEY', 'proxy-managed'],
+        ['WORMHOLE_RELAY', `http://host.lima.internal:${wormholePort}`],
       ];
       if (plasticMode) {
         envPairs.push(['GRO_PLASTIC', '1']);
@@ -679,6 +700,26 @@ Usage:
         process.exit(1);
       }
 
+      // Ensure wormhole relay is running (non-blocking — pods can work without it)
+      const wormholePort = process.env.WORMHOLE_PORT || '8787';
+      try {
+        await exec('curl', ['-sf', `http://localhost:${wormholePort}/`], { timeout: 2000 });
+        console.log(`[thesystem] wormhole relay on :${wormholePort}`);
+      } catch {
+        try {
+          await exec('which', ['wormhole'], { timeout: 2000 });
+          console.log('[thesystem] Starting wormhole relay...');
+          const wormholeChild = spawn('wormhole', ['relay', '--relay', `:${wormholePort}`], {
+            detached: true, stdio: 'ignore', env: { ...process.env },
+          });
+          wormholeChild.unref();
+          await new Promise(r => setTimeout(r, 1500));
+          console.log(`[thesystem] wormhole relay started on :${wormholePort}`);
+        } catch {
+          console.log('[thesystem] wormhole not installed — skipping relay (npm i -g @tjamescouch/wormhole)');
+        }
+      }
+
       // Build container image (includes both gro and gtui)
       const imageCheck = rebuild ? 'false' : 'podman image exists thesystem-gtui:latest 2>/dev/null';
       const buildScript = [
@@ -688,7 +729,7 @@ Usage:
         `  podman build --no-cache -t thesystem-gtui:latest -f- /tmp <<'CONTAINERFILE_EOF'`,
         'FROM node:20-slim',
         'RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*',
-        'RUN npm install -g @tjamescouch/gro @tjamescouch/gtui agentpatch && npm cache clean --force',
+        'RUN npm install -g @tjamescouch/gro @tjamescouch/gtui agentpatch @tjamescouch/wormhole && npm cache clean --force',
         'USER node',
         'WORKDIR /home/node',
         'ENTRYPOINT ["gtui"]',
@@ -727,6 +768,7 @@ Usage:
         ['DEEPSEEK_API_KEY', 'proxy-managed'],
         ['MISTRAL_BASE_URL', `${gtuiProxyBase}/mistral`],
         ['MISTRAL_API_KEY', 'proxy-managed'],
+        ['WORMHOLE_RELAY', `http://host.lima.internal:${wormholePort}`],
       ];
       const gtuiEnvFlags = gtuiEnvPairs.map(([k, v]) => `-e ${k}=${v}`).join(' ');
 
