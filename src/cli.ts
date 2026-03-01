@@ -564,7 +564,7 @@ Usage:
         `  podman build --no-cache -t thesystem-gro:latest -f- /tmp <<'CONTAINERFILE_EOF'`,
         'FROM node:20-slim',
         'RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*',
-        'RUN npm install -g @tjamescouch/gro agentpatch @tjamescouch/wormhole && npm cache clean --force',
+        'RUN npm install -g @tjamescouch/gro @tjamescouch/agentchat agentpatch @tjamescouch/wormhole && npm cache clean --force',
         'USER node',
         'WORKDIR /home/node',
         'ENTRYPOINT ["gro"]',
