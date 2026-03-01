@@ -528,7 +528,7 @@ Usage:
       // Check agentauth proxy is healthy
       const proxyPort = process.env.AGENTAUTH_PORT || '9999';
       try {
-        await exec('curl', ['-sf', `http://localhost:${proxyPort}/agentauth/health`], { timeout: 2000 });
+        await exec('/usr/bin/curl', ['-sf', `http://localhost:${proxyPort}/agentauth/health`], { timeout: 2000 });
       } catch {
         console.error(`[thesystem] agentauth proxy not running on :${proxyPort}. Run: thesystem agentauth start`);
         process.exit(1);
@@ -537,7 +537,7 @@ Usage:
       // Ensure wormhole relay is running (non-blocking — pods can work without it)
       const wormholePort = process.env.WORMHOLE_PORT || '8787';
       try {
-        const { stdout: httpCode } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${wormholePort}/`], { timeout: 2000 });
+        const { stdout: httpCode } = await exec('/usr/bin/curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${wormholePort}/`], { timeout: 2000 });
         if (httpCode.trim() !== '000') console.log(`[thesystem] wormhole relay on :${wormholePort}`);
         else throw new Error('not running');
       } catch {
@@ -686,7 +686,7 @@ Usage:
       // Check agentauth proxy is healthy
       const proxyPort = process.env.AGENTAUTH_PORT || '9999';
       try {
-        await exec('curl', ['-sf', `http://localhost:${proxyPort}/agentauth/health`], { timeout: 2000 });
+        await exec('/usr/bin/curl', ['-sf', `http://localhost:${proxyPort}/agentauth/health`], { timeout: 2000 });
       } catch {
         console.error(`[thesystem] agentauth proxy not running on :${proxyPort}. Run: thesystem agentauth start`);
         process.exit(1);
@@ -695,7 +695,7 @@ Usage:
       // Ensure wormhole relay is running (non-blocking — pods can work without it)
       const wormholePort = process.env.WORMHOLE_PORT || '8787';
       try {
-        const { stdout: httpCode } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${wormholePort}/`], { timeout: 2000 });
+        const { stdout: httpCode } = await exec('/usr/bin/curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${wormholePort}/`], { timeout: 2000 });
         if (httpCode.trim() !== '000') console.log(`[thesystem] wormhole relay on :${wormholePort}`);
         else throw new Error('not running');
       } catch {
