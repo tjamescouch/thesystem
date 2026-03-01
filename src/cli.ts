@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFile, spawn } from 'child_process';
+import { execFile, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -33,6 +33,7 @@ Usage:
   thesystem daemon install      Install launchd agent (auto-start on login)
   thesystem daemon uninstall    Remove launchd agent
   thesystem daemon status       Show daemon status
+  thesystem update              Update thesystem + rebuild container images
   thesystem version             Show version
   thesystem reinstall           Reinstall components inside VM
   thesystem gro [args...]       Run gro in a pod (resumes last session by default)
@@ -488,6 +489,25 @@ Usage:
 
     case 'version': {
       console.log(`thesystem v${VERSION}`);
+      break;
+    }
+
+    case 'update': {
+      console.log('[thesystem] Updating thesystem + rebuilding container images...');
+      // 1. brew update + upgrade thesystem
+      try { execSync('brew update && brew upgrade thesystem 2>&1', { stdio: 'inherit' }); }
+      catch { /* already up-to-date returns non-zero sometimes */ }
+      // 2. Nuke cached container images so next run rebuilds with latest npm packages
+      const orch = new Orchestrator();
+      const vmUp = await orch.isVmRunning();
+      if (vmUp) {
+        console.log('[thesystem] Removing cached container images...');
+        try { await exec('limactl', ['shell', 'thesystem', '--', 'podman', 'rmi', '-f', 'thesystem-gro:latest']); } catch {}
+        try { await exec('limactl', ['shell', 'thesystem', '--', 'podman', 'rmi', '-f', 'thesystem-gtui:latest']); } catch {}
+        console.log('[thesystem] Done. Container images will rebuild on next run.');
+      } else {
+        console.log('[thesystem] VM not running — images will rebuild on next start.');
+      }
       break;
     }
 

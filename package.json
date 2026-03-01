@@ -1,6 +1,6 @@
 {
   "name": "thesystem",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Install it and you have a dev shop",
   "main": "dist/index.js",
   "bin": {
