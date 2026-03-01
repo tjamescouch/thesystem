@@ -630,30 +630,21 @@ Usage:
       const escapedGroArgs = groArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       const extraArgs = groArgs.length > 0 ? ` ${escapedGroArgs}` : '';
       // --autodiscover-mcp: let gro auto-load ~/.gro/mcp.json inside the container
-      const podmanBase = `podman run -it --rm --network host ${volMount} ${devMount} ${envFlags} thesystem-gro:latest --autodiscover-mcp`;
+      // PLASTIC mode uses gro-supervised as entrypoint — the supervisor holds warm
+      // state in its heap across @@reboot@@ cycles via IPC, so the agent preserves
+      // spend meter, violations, familiarity, deja-vu, and runtime config across reboots.
+      const entrypoint = plasticMode ? '--entrypoint gro-supervised' : '';
+      const podmanBase = `podman run -it --rm --network host ${volMount} ${devMount} ${envFlags} ${entrypoint} thesystem-gro:latest --autodiscover-mcp`;
 
       let runScript: string;
       if (plasticMode) {
-        // PLASTIC mode: restart on exit code 75 (@@reboot@@ marker), up to 20 times
-        console.log('[thesystem] PLASTIC mode: self-modification enabled, auto-restart on @@reboot@@');
-        // groCmd must NOT use `exit` — that would kill the bash shell and break
-        // the restart while loop. Instead, capture RC and use (exit $RC) subshell
-        // to set $? without terminating the script.
-        // - exit 75 → RC=75, skip -i fallback, (exit 75) → while loop restarts
-        // - exit 0  → RC=0, skip -i fallback, (exit 0) → while loop exits cleanly
-        // - exit N  → RC=N (N≠75), run -i fallback, capture new RC
+        // PLASTIC mode: the supervisor handles restart-on-exit-75 internally with
+        // warm state preservation. No bash restart loop needed.
+        console.log('[thesystem] PLASTIC mode: self-modification enabled, supervisor handles warm restarts');
         const groCmd = noContinue
           ? `${podmanBase} -i --plastic${extraArgs}`
-          : `${podmanBase} -c --plastic${extraArgs}; RC=$?; if [ $RC -ne 0 ] && [ $RC -ne 75 ]; then ${podmanBase} -i --plastic${extraArgs}; RC=$?; fi; (exit $RC)`;
-        runScript = [
-          volSetup,
-          `&& COUNT=0; MAX=20; while [ $COUNT -lt $MAX ]; do`,
-          `  ${groCmd}; EXIT=$?;`,
-          `  if [ $EXIT -ne 75 ]; then exit $EXIT; fi;`,
-          `  COUNT=$((COUNT + 1));`,
-          `  echo "[plastic-runner] Reboot $COUNT/$MAX";`,
-          `done; echo "[plastic-runner] Max reboots reached"; exit 1`,
-        ].join(' ');
+          : `${podmanBase} -c --plastic${extraArgs} || ${podmanBase} -i --plastic${extraArgs}`;
+        runScript = `${volSetup} && ${groCmd}`;
       } else if (noContinue) {
         runScript = `${volSetup} && ${podmanBase} -i${extraArgs}`;
       } else {
