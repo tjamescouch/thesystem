@@ -634,7 +634,12 @@ Usage:
       // state in its heap across @@reboot@@ cycles via IPC, so the agent preserves
       // spend meter, violations, familiarity, deja-vu, and runtime config across reboots.
       const entrypoint = plasticMode ? '--entrypoint gro-supervised' : '';
-      const podmanBase = `podman run -it --rm --network host ${volMount} ${devMount} ${envFlags} ${entrypoint} thesystem-gro:latest --autodiscover-mcp`;
+      const containerName = 'thesystem-gro';
+      // Stop any stale container from a previous session before starting a new one.
+      // Without this, ctrl+C / terminal close leaves orphaned containers running
+      // with API access indefinitely.
+      const cleanup = `podman stop ${containerName} 2>/dev/null; podman rm ${containerName} 2>/dev/null; true`;
+      const podmanBase = `podman run -it --rm --name ${containerName} --network host ${volMount} ${devMount} ${envFlags} ${entrypoint} thesystem-gro:latest --autodiscover-mcp`;
 
       let runScript: string;
       if (plasticMode) {
@@ -644,12 +649,12 @@ Usage:
         const groCmd = noContinue
           ? `${podmanBase} -i --plastic${extraArgs}`
           : `${podmanBase} -c --plastic${extraArgs} || ${podmanBase} -i --plastic${extraArgs}`;
-        runScript = `${volSetup} && ${groCmd}`;
+        runScript = `${volSetup} && ${cleanup} && ${groCmd}`;
       } else if (noContinue) {
-        runScript = `${volSetup} && ${podmanBase} -i${extraArgs}`;
+        runScript = `${volSetup} && ${cleanup} && ${podmanBase} -i${extraArgs}`;
       } else {
         // Try -c first; if it fails (no session), retry with -i
-        runScript = `${volSetup} && ${podmanBase} -c${extraArgs} || ${podmanBase} -i${extraArgs}`;
+        runScript = `${volSetup} && ${cleanup} && ${podmanBase} -c${extraArgs} || ${podmanBase} -i${extraArgs}`;
       }
 
       const runChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', runScript], {
@@ -777,7 +782,9 @@ Usage:
 
       const escapedGtuiArgs = gtuiArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       const gtuiExtraArgs = gtuiArgs.length > 0 ? ` ${escapedGtuiArgs}` : '';
-      const gtuiRunScript = `${gtuiVolSetup} && podman run -it --rm --network host ${gtuiVolMount} ${gtuiDevMount} ${gtuiEnvFlags} thesystem-gtui:latest${gtuiExtraArgs}`;
+      const gtuiContainerName = 'thesystem-gtui';
+      const gtuiCleanup = `podman stop ${gtuiContainerName} 2>/dev/null; podman rm ${gtuiContainerName} 2>/dev/null; true`;
+      const gtuiRunScript = `${gtuiVolSetup} && ${gtuiCleanup} && podman run -it --rm --name ${gtuiContainerName} --network host ${gtuiVolMount} ${gtuiDevMount} ${gtuiEnvFlags} thesystem-gtui:latest${gtuiExtraArgs}`;
 
       const gtuiRunChild = spawn('limactl', ['shell', '--workdir', '/home', vmName, 'bash', '-c', gtuiRunScript], {
         stdio: 'inherit',
