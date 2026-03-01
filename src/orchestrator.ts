@@ -378,12 +378,11 @@ export class Orchestrator {
 
   private async ensureWormholeRelay(): Promise<void> {
     const port = process.env.WORMHOLE_PORT || '8787';
-    const url = `http://localhost:${port}/transfer/health-check`;
 
-    // Check if already running
+    // Check if already running (relay returns 404 on / — that's fine, means it's up)
     try {
-      await exec('curl', ['-sf', url], { timeout: 2000 });
-      return; // Already up (or at least responding on the port)
+      const { stdout } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 2000 });
+      if (stdout.trim() !== '000') return; // Any HTTP response means relay is up
     } catch {
       // Not running — auto-start it
     }
@@ -397,7 +396,7 @@ export class Orchestrator {
     }
 
     console.log('[thesystem] Starting wormhole relay...');
-    const child = spawn('wormhole', ['relay', '--relay', `:${port}`], {
+    const child = spawn('wormhole', ['relay', '-r', port], {
       detached: true,
       stdio: 'ignore',
       env: { ...process.env },
@@ -409,10 +408,11 @@ export class Orchestrator {
     while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 300));
       try {
-        // wormhole relay returns 404 on unknown paths but the port is open
-        await exec('curl', ['-sf', '-o', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 1000 });
-        console.log(`[thesystem] wormhole relay ready on :${port}`);
-        return;
+        const { stdout } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 1000 });
+        if (stdout.trim() !== '000') {
+          console.log(`[thesystem] wormhole relay ready on :${port}`);
+          return;
+        }
       } catch {
         // Still starting
       }

@@ -537,13 +537,14 @@ Usage:
       // Ensure wormhole relay is running (non-blocking — pods can work without it)
       const wormholePort = process.env.WORMHOLE_PORT || '8787';
       try {
-        await exec('curl', ['-sf', `http://localhost:${wormholePort}/`], { timeout: 2000 });
-        console.log(`[thesystem] wormhole relay on :${wormholePort}`);
+        const { stdout: httpCode } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${wormholePort}/`], { timeout: 2000 });
+        if (httpCode.trim() !== '000') console.log(`[thesystem] wormhole relay on :${wormholePort}`);
+        else throw new Error('not running');
       } catch {
         try {
           await exec('which', ['wormhole'], { timeout: 2000 });
           console.log('[thesystem] Starting wormhole relay...');
-          const wormholeChild = spawn('wormhole', ['relay', '--relay', `:${wormholePort}`], {
+          const wormholeChild = spawn('wormhole', ['relay', '-r', wormholePort], {
             detached: true, stdio: 'ignore', env: { ...process.env },
           });
           wormholeChild.unref();
@@ -703,13 +704,14 @@ Usage:
       // Ensure wormhole relay is running (non-blocking — pods can work without it)
       const wormholePort = process.env.WORMHOLE_PORT || '8787';
       try {
-        await exec('curl', ['-sf', `http://localhost:${wormholePort}/`], { timeout: 2000 });
-        console.log(`[thesystem] wormhole relay on :${wormholePort}`);
+        const { stdout: httpCode } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${wormholePort}/`], { timeout: 2000 });
+        if (httpCode.trim() !== '000') console.log(`[thesystem] wormhole relay on :${wormholePort}`);
+        else throw new Error('not running');
       } catch {
         try {
           await exec('which', ['wormhole'], { timeout: 2000 });
           console.log('[thesystem] Starting wormhole relay...');
-          const wormholeChild = spawn('wormhole', ['relay', '--relay', `:${wormholePort}`], {
+          const wormholeChild = spawn('wormhole', ['relay', '-r', wormholePort], {
             detached: true, stdio: 'ignore', env: { ...process.env },
           });
           wormholeChild.unref();
