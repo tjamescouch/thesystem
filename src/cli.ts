@@ -607,7 +607,8 @@ Usage:
       // When using -c, fall back to -i if there's no session to resume.
       const escapedGroArgs = groArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       const extraArgs = groArgs.length > 0 ? ` ${escapedGroArgs}` : '';
-      const podmanBase = `podman run -it --rm --network host ${volMount} ${devMount} ${envFlags} thesystem-gro:latest`;
+      // --autodiscover-mcp: let gro auto-load ~/.gro/mcp.json inside the container
+      const podmanBase = `podman run -it --rm --network host ${volMount} ${devMount} ${envFlags} thesystem-gro:latest --autodiscover-mcp`;
 
       let runScript: string;
       if (plasticMode) {
