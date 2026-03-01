@@ -161,7 +161,7 @@ export const PROVIDERS: Record<string, ProviderConfig> = {
     authStyle: 'bearer',
   },
   groq: {
-    upstream: 'https://api.groq.com',
+    upstream: 'https://api.groq.com/openai',
     authStyle: 'bearer',
   },
   deepseek: {
