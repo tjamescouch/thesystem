@@ -952,6 +952,9 @@ Usage:
         `export AGENTCTL_IMAGE='thesystem-gro:latest'`,
         // Tell agentctl to use gro runtime args (--persistent, --autodiscover-mcp, etc.)
         `export AGENT_RUNTIME='gro'`,
+        // Dev mount: overlay host gro dist/ into container for rapid iteration.
+        // Lima maps /Users/jamescouch/dev → /home/jamescouch.linux/dev
+        `export GRO_DEV_MOUNT='/home/jamescouch.linux/dev/gro'`,
         // Read token from thesystem start if available
         'if [ -f /run/thesystem/agent-token ]; then export CLAUDE_CODE_OAUTH_TOKEN=$(cat /run/thesystem/agent-token); fi',
       ].join('; ');
