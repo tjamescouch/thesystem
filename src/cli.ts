@@ -607,23 +607,29 @@ Usage:
         buildChild.on('error', reject);
       });
 
+      // Read agentauth session token for authenticated proxy access
+      const tokenFile = path.join(os.homedir(), '.thesystem', 'agentauth-token');
+      let proxyToken = 'proxy-managed';
+      try { proxyToken = fs.readFileSync(tokenFile, 'utf-8').trim() || 'proxy-managed'; } catch {}
+
       // Build env flags for all provider proxies
       const proxyBase = `http://host.lima.internal:${proxyPort}`;
       const envPairs: [string, string][] = [
         ['ANTHROPIC_BASE_URL', `${proxyBase}/anthropic`],
-        ['ANTHROPIC_API_KEY', 'proxy-managed'],
+        ['ANTHROPIC_API_KEY', proxyToken],
         ['OPENAI_BASE_URL', `${proxyBase}/openai`],
-        ['OPENAI_API_KEY', 'proxy-managed'],
+        ['OPENAI_API_KEY', proxyToken],
         ['XAI_BASE_URL', `${proxyBase}/xai`],
-        ['XAI_API_KEY', 'proxy-managed'],
+        ['XAI_API_KEY', proxyToken],
         ['GROQ_BASE_URL', `${proxyBase}/groq`],
-        ['GROQ_API_KEY', 'proxy-managed'],
+        ['GROQ_API_KEY', proxyToken],
         ['GOOGLE_BASE_URL', `${proxyBase}/google`],
-        ['GOOGLE_API_KEY', 'proxy-managed'],
+        ['GOOGLE_API_KEY', proxyToken],
         ['DEEPSEEK_BASE_URL', `${proxyBase}/deepseek`],
-        ['DEEPSEEK_API_KEY', 'proxy-managed'],
+        ['DEEPSEEK_API_KEY', proxyToken],
         ['MISTRAL_BASE_URL', `${proxyBase}/mistral`],
-        ['MISTRAL_API_KEY', 'proxy-managed'],
+        ['MISTRAL_API_KEY', proxyToken],
+        ['AGENTAUTH_TOKEN', proxyToken],
         ['WORMHOLE_RELAY', `http://host.lima.internal:${wormholePort}`],
       ];
       if (plasticMode) {
@@ -769,23 +775,29 @@ Usage:
         buildChild.on('error', reject);
       });
 
+      // Read agentauth session token for authenticated proxy access
+      const gtuiTokenFile = path.join(os.homedir(), '.thesystem', 'agentauth-token');
+      let gtuiProxyToken = 'proxy-managed';
+      try { gtuiProxyToken = fs.readFileSync(gtuiTokenFile, 'utf-8').trim() || 'proxy-managed'; } catch {}
+
       // Build env flags for all provider proxies
       const gtuiProxyBase = `http://host.lima.internal:${proxyPort}`;
       const gtuiEnvPairs: [string, string][] = [
         ['ANTHROPIC_BASE_URL', `${gtuiProxyBase}/anthropic`],
-        ['ANTHROPIC_API_KEY', 'proxy-managed'],
+        ['ANTHROPIC_API_KEY', gtuiProxyToken],
         ['OPENAI_BASE_URL', `${gtuiProxyBase}/openai`],
-        ['OPENAI_API_KEY', 'proxy-managed'],
+        ['OPENAI_API_KEY', gtuiProxyToken],
         ['XAI_BASE_URL', `${gtuiProxyBase}/xai`],
-        ['XAI_API_KEY', 'proxy-managed'],
+        ['XAI_API_KEY', gtuiProxyToken],
         ['GROQ_BASE_URL', `${gtuiProxyBase}/groq`],
-        ['GROQ_API_KEY', 'proxy-managed'],
+        ['GROQ_API_KEY', gtuiProxyToken],
         ['GOOGLE_BASE_URL', `${gtuiProxyBase}/google`],
-        ['GOOGLE_API_KEY', 'proxy-managed'],
+        ['GOOGLE_API_KEY', gtuiProxyToken],
         ['DEEPSEEK_BASE_URL', `${gtuiProxyBase}/deepseek`],
-        ['DEEPSEEK_API_KEY', 'proxy-managed'],
+        ['DEEPSEEK_API_KEY', gtuiProxyToken],
         ['MISTRAL_BASE_URL', `${gtuiProxyBase}/mistral`],
-        ['MISTRAL_API_KEY', 'proxy-managed'],
+        ['MISTRAL_API_KEY', gtuiProxyToken],
+        ['AGENTAUTH_TOKEN', gtuiProxyToken],
         ['WORMHOLE_RELAY', `http://host.lima.internal:${wormholePort}`],
       ];
       const gtuiEnvFlags = gtuiEnvPairs.map(([k, v]) => `-e ${k}=${v}`).join(' ');
@@ -858,10 +870,13 @@ Usage:
       }
 
       const proxyPort = process.env.AGENTAUTH_PORT || '9999';
+      const agentctlTokenFile = path.join(os.homedir(), '.thesystem', 'agentauth-token');
+      let agentctlProxyToken = 'proxy-managed';
+      try { agentctlProxyToken = fs.readFileSync(agentctlTokenFile, 'utf-8').trim() || 'proxy-managed'; } catch {}
       const envSetup = [
         'export PATH="$HOME/.npm-global/bin:$PATH"',
         `export ANTHROPIC_BASE_URL='http://host.lima.internal:${proxyPort}/anthropic'`,
-        `export ANTHROPIC_API_KEY='proxy-managed'`,
+        `export ANTHROPIC_API_KEY='${agentctlProxyToken}'`,
         `export AGENTCHAT_PUBLIC=true`,
         // Read token from thesystem start if available
         'if [ -f /run/thesystem/agent-token ]; then export CLAUDE_CODE_OAUTH_TOKEN=$(cat /run/thesystem/agent-token); fi',

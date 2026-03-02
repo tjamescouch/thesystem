@@ -56,36 +56,41 @@ export class Orchestrator {
       .join('\n');
 
     // Inject proxy URLs so agents route through agentauth.
-    // Each provider gets a BASE_URL pointing at the proxy and a dummy API_KEY.
+    // Each provider gets a BASE_URL pointing at the proxy and the session token as API_KEY.
     const proxyPort = process.env.AGENTAUTH_PORT || String(AGENTAUTH_PORT);
     const proxyBase = `http://host.lima.internal:${proxyPort}`;
+    const tokenPath = path.join(process.env.HOME || '', '.thesystem', 'agentauth-token');
+    let proxyToken = 'proxy-managed';
+    try { proxyToken = fs.readFileSync(tokenPath, 'utf-8').trim() || 'proxy-managed'; } catch {}
     const proxyExports = [
       // Anthropic
       `export ANTHROPIC_BASE_URL='${proxyBase}/anthropic'`,
-      `export ANTHROPIC_API_KEY='proxy-managed'`,
+      `export ANTHROPIC_API_KEY='${proxyToken}'`,
       // OpenAI
       `export OPENAI_BASE_URL='${proxyBase}/openai'`,
-      `export OPENAI_API_KEY='proxy-managed'`,
+      `export OPENAI_API_KEY='${proxyToken}'`,
       // xAI / Grok
       `export XAI_BASE_URL='${proxyBase}/xai'`,
-      `export XAI_API_KEY='proxy-managed'`,
+      `export XAI_API_KEY='${proxyToken}'`,
       `export GROK_BASE_URL='${proxyBase}/grok'`,
-      `export GROK_API_KEY='proxy-managed'`,
+      `export GROK_API_KEY='${proxyToken}'`,
       // Google / Gemini
       `export GOOGLE_BASE_URL='${proxyBase}/google'`,
-      `export GOOGLE_API_KEY='proxy-managed'`,
-      `export GOOGLE_GENERATIVEAI_API_KEY='proxy-managed'`,
+      `export GOOGLE_API_KEY='${proxyToken}'`,
+      `export GOOGLE_GENERATIVEAI_API_KEY='${proxyToken}'`,
       `export GEMINI_BASE_URL='${proxyBase}/google'`,
-      `export GEMINI_API_KEY='proxy-managed'`,
+      `export GEMINI_API_KEY='${proxyToken}'`,
       // Mistral
       `export MISTRAL_BASE_URL='${proxyBase}/mistral'`,
-      `export MISTRAL_API_KEY='proxy-managed'`,
+      `export MISTRAL_API_KEY='${proxyToken}'`,
       // Groq
       `export GROQ_BASE_URL='${proxyBase}/groq'`,
-      `export GROQ_API_KEY='proxy-managed'`,
+      `export GROQ_API_KEY='${proxyToken}'`,
       // DeepSeek
       `export DEEPSEEK_BASE_URL='${proxyBase}/deepseek'`,
-      `export DEEPSEEK_API_KEY='proxy-managed'`,
+      `export DEEPSEEK_API_KEY='${proxyToken}'`,
+      // Credential helper token
+      `export AGENTAUTH_TOKEN='${proxyToken}'`,
     ].join('\n');
 
     const script = `#!/bin/bash\nexport PATH="$HOME/.npm-global/bin:$PATH"\nexport NODE_PATH="$HOME/.npm-global/lib/node_modules"\n${envExports}\n${proxyExports}\n${command}\n`;

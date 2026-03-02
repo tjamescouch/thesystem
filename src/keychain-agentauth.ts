@@ -3,6 +3,8 @@ import { Readable } from 'stream';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import net from 'net';
+import crypto from 'crypto';
+import * as os from 'os';
 
 const exec = promisify(execFile);
 
@@ -18,9 +20,7 @@ const ALLOWED_CIDRS = [
   '127.0.0.0/8',        // localhost (IPv4)
   '::1/128',            // localhost (IPv6)
   '::ffff:127.0.0.0/104', // IPv4-mapped localhost
-  '10.0.0.0/8',         // Lima VM bridge networks
-  '192.168.0.0/16',     // common private range (Lima, Podman)
-  '172.16.0.0/12',      // Docker/Podman bridge default
+  '192.168.0.0/16',     // Lima VM bridge (covers all Lima backend variants)
 ];
 
 function parseCIDR(cidr: string): { addr: bigint; mask: bigint; bits: number } {
@@ -179,6 +179,30 @@ import * as fs from 'fs';
 const BIOMETRIC_BIN = path.join(__dirname, '..', 'dist', 'thesystem-keychain');
 const hasBiometricBin = fs.existsSync(BIOMETRIC_BIN);
 
+// ---------------------------------------------------------------------------
+// Session token — authenticates proxy clients
+// ---------------------------------------------------------------------------
+const TOKEN_FILE = path.join(os.homedir(), '.thesystem', 'agentauth-token');
+
+function generateSessionToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function writeSessionToken(token: string): void {
+  const dir = path.dirname(TOKEN_FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
+}
+
+/** Read the current session token (for CLI commands that need to pass it to containers). */
+export function readSessionToken(): string | null {
+  try {
+    return fs.readFileSync(TOKEN_FILE, 'utf-8').trim();
+  } catch {
+    return null;
+  }
+}
+
 async function readKeyFromKeychain(provider: string): Promise<string> {
   const svc = `thesystem/${provider}`;
 
@@ -287,6 +311,18 @@ function proxyRequest(
   });
 }
 
+/** Check if request carries a valid session token in any supported auth header. */
+function hasValidSessionToken(req: http.IncomingMessage, token: string): boolean {
+  const auth = req.headers['authorization'];
+  if (auth) {
+    const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
+    if (bearer === token) return true;
+  }
+  if (req.headers['x-api-key'] === token) return true;
+  if (req.headers['x-goog-api-key'] === token) return true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
@@ -305,10 +341,15 @@ function proxyRequest(
  * - /<provider>/* -> upstream API
  *
  * Security:
- * - IP allowlist: localhost, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+ * - Session token authentication (required for all routes except /health)
+ * - IP allowlist: localhost, 192.168.0.0/16 (Lima bridge)
  * - All requests logged with timestamp, source IP, provider, model, status, duration
  */
 export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
+  // Generate session token — all clients must present this to use the proxy
+  const sessionToken = generateSessionToken();
+  writeSessionToken(sessionToken);
+
   const server = http.createServer(async (req, res) => {
     const clientIP = req.socket.remoteAddress || 'unknown';
 
@@ -328,6 +369,14 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
         console.log(`[${timestamp()}] ${clientIP} GET /agentauth/health`);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', backends: Object.keys(PROVIDERS), port: opts.port }));
+        return;
+      }
+
+      // --- Session token gate (all routes below require valid token) ---
+      if (!hasValidSessionToken(req, sessionToken)) {
+        logDenied(clientIP, req.method || 'GET', url.pathname);
+        res.writeHead(403, { 'content-type': 'text/plain' });
+        res.end('forbidden');
         return;
       }
 
@@ -383,6 +432,7 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
     console.log(`[thesystem] agentauth proxy listening on http://${bindAddr}:${opts.port}`);
     console.log(`[thesystem] providers: ${Object.keys(PROVIDERS).join(', ')}`);
     console.log(`[thesystem] IP allowlist: ${ALLOWED_CIDRS.join(', ')}`);
+    console.log(`[thesystem] session token: ${sessionToken.slice(0, 8)}... (${TOKEN_FILE})`);
   });
 
   // Keep process alive
