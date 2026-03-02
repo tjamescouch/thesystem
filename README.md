@@ -4,7 +4,7 @@
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![GitHub all releases](https://img.shields.io/github/downloads/tjamescouch/thesystem/total)
-![v0.2.0](https://img.shields.io/github/downloads/tjamescouch/thesystem/v0.2.14/total)
+![v0.2.14](https://img.shields.io/github/downloads/tjamescouch/thesystem/v0.2.14/total)
 
 Install it and you have a dev shop.
 
@@ -118,14 +118,24 @@ Environment variables can be substituted with `${VAR}` syntax. Secrets never go 
 
 ## API Keys & agentauth
 
-Secrets never leave the host machine. The agentauth proxy reads keys from macOS Keychain and forwards authenticated requests to LLM providers. Agents inside the VM receive `ANTHROPIC_BASE_URL=http://host.lima.internal:9999/anthropic` and never see a real key.
+Secrets never leave the host machine. The agentauth proxy loads keys from macOS Keychain **via Touch ID** at startup, caches them in memory, and forwards authenticated requests to LLM providers. Agents inside the VM never see real keys — they authenticate to the proxy with a per-session token.
+
+### Security model
+
+1. **Touch ID at startup** — The proxy uses a biometric-gated binary (`thesystem-keychain`) to read all API keys from macOS Keychain. You'll get a single Touch ID prompt when the proxy starts. Keys are cached in memory for the lifetime of the process.
+2. **Session token** — On startup, the proxy generates a 64-character hex token stored at `~/.thesystem/agentauth-token` (mode 600). All proxy routes (except `/agentauth/health`) require this token in the `x-api-key` header.
+3. **No key extraction** — The credential endpoint is disabled. Agents can *use* keys through the proxy but cannot read them. Even with the session token, there's no API to retrieve a raw key.
+4. **Keys never enter the VM** — Agents receive the session token as their "API key". The proxy validates the token and injects the real key into upstream requests.
 
 ```bash
-# Store keys (one-time setup)
+# Store keys (one-time setup, requires Touch ID)
 thesystem keys set anthropic sk-ant-...
 thesystem keys set openai sk-...
 thesystem keys set xai key-...       # xAI (Grok) API key
 thesystem keys set google AIza...    # Google Generative AI API key
+
+# Verify which keys are stored
+thesystem keys check
 ```
 
 The agentauth proxy starts automatically as part of `thesystem start`. You can also run it manually with `thesystem agentauth start` if needed outside of the normal start sequence.
@@ -148,10 +158,10 @@ The agentauth proxy starts automatically as part of `thesystem start`. You can a
    ```bash
    thesystem keys set anthropic sk-ant-...
    ```
-3. Inside the VM, use:
+3. Inside the VM, agents authenticate with the session token (auto-injected for managed agents):
    ```bash
    export ANTHROPIC_BASE_URL='http://host.lima.internal:9999/anthropic'
-   export ANTHROPIC_API_KEY='proxy-managed'
+   export ANTHROPIC_API_KEY="$(cat ~/.thesystem/agentauth-token)"
    ```
 
 #### OpenAI GPT
@@ -161,10 +171,10 @@ The agentauth proxy starts automatically as part of `thesystem start`. You can a
    ```bash
    thesystem keys set openai sk-...
    ```
-3. Inside the VM, use:
+3. Inside the VM:
    ```bash
    export OPENAI_BASE_URL='http://host.lima.internal:9999/openai'
-   export OPENAI_API_KEY='proxy-managed'
+   export OPENAI_API_KEY="$(cat ~/.thesystem/agentauth-token)"
    ```
 
 #### xAI Grok
@@ -174,15 +184,15 @@ The agentauth proxy starts automatically as part of `thesystem start`. You can a
    ```bash
    thesystem keys set xai key-...
    ```
-3. Inside the VM, use:
+3. Inside the VM:
    ```bash
    export XAI_BASE_URL='http://host.lima.internal:9999/xai'
-   export XAI_API_KEY='proxy-managed'
+   export XAI_API_KEY="$(cat ~/.thesystem/agentauth-token)"
    ```
 4. Or use the Grok client directly (compatible with OpenAI SDK):
    ```python
    from openai import OpenAI
-   client = OpenAI(base_url="http://host.lima.internal:9999/xai", api_key="proxy-managed")
+   client = OpenAI(base_url="http://host.lima.internal:9999/xai", api_key=session_token)
    ```
 
 #### Google Generative AI (Gemini)
@@ -195,15 +205,10 @@ The agentauth proxy starts automatically as part of `thesystem start`. You can a
    ```bash
    thesystem keys set google AIza...
    ```
-3. Inside the VM, use with the Google SDK:
-   ```python
-   import google.generativeai as genai
-   genai.configure(api_key="AIza...")  # or read from env
-   ```
-4. For REST API calls, use the proxy:
+3. For REST API calls through the proxy:
    ```bash
    curl -X GET "http://host.lima.internal:9999/google/v1beta/models" \
-     -H "x-goog-api-key: proxy-managed"
+     -H "x-goog-api-key: $(cat ~/.thesystem/agentauth-token)"
    ```
 
 ### Complete Multi-Provider Setup Example
@@ -224,17 +229,21 @@ thesystem go
 
 ## Architecture
 
-The proxy acts as an API key router. Keys never enter the VM.
+The proxy acts as an API key vault. Keys are loaded via Touch ID at startup, cached in memory, and never enter the VM.
 
 ```
 ┌──── Your Mac ──────────────────────────────────────────────┐
 │                                                            │
 │  thesystem CLI (host-side, manages VM lifecycle)           │
-│  agentauth proxy :9999 (API key router, reads Keychain)    │
-│    ├─ /anthropic/* → api.anthropic.com (w/ x-api-key)      │
-│    ├─ /openai/* → api.openai.com (w/ Bearer token)         │
-│    ├─ /xai/* → api.x.ai (w/ Bearer token)                  │
+│                                                            │
+│  agentauth proxy :9999                                     │
+│    ├─ Touch ID → loads keys into memory at startup         │
+│    ├─ Session token → ~/.thesystem/agentauth-token         │
+│    ├─ /anthropic/* → api.anthropic.com (injects real key)  │
+│    ├─ /openai/* → api.openai.com (injects real key)        │
+│    ├─ /xai/* → api.x.ai (injects real key)                 │
 │    └─ /google/* → generativelanguage.googleapis.com (key)  │
+│                                                            │
 │  Your Claude Code sessions (unmanaged, trusted)            │
 │                                                            │
 │  ┌══ Lima VM "thesystem" ════════════════════════════════┐ │
@@ -243,9 +252,9 @@ The proxy acts as an API key router. Keys never enter the VM.
 │  ║  agentdash :3000         (server mode only)           ║ │
 │  ║                                                       ║ │
 │  ║  agentctl-swarm                                       ║ │
-│  ║    ├── Agent 0 (Podman container)                     ║ │
-│  ║    ├── Agent 1 (Podman container)                     ║ │
-│  ║    └── Agent N (Podman container)                     ║ │
+│  ║    ├── Agent 0 (Podman container, has session token)  ║ │
+│  ║    ├── Agent 1 (Podman container, has session token)  ║ │
+│  ║    └── Agent N (Podman container, has session token)  ║ │
 │  ║                                                       ║ │
 │  ║  ~/dev mounted read-only from host                    ║ │
 │  ╚═══════════════════════════════════════════════════════╝ │
@@ -259,17 +268,22 @@ The proxy acts as an API key router. Keys never enter the VM.
 
 | Zone | Trust Level | Contains |
 |------|-------------|----------|
-| Your Mac | CRITICAL | API keys (Keychain), agentauth proxy, you |
+| Your Mac | CRITICAL | API keys (Keychain, Touch ID-gated), agentauth proxy, you |
+| Session token | USE-only | Authorizes API calls through proxy; cannot extract keys |
 | Lima VM | Expendable | Managed agents, sandboxed, disposable |
 | Remote router | Can be compromised | Shared relay, no secrets stored |
 
 The VM protects your Mac from the managed agents. If a managed agent goes rogue, it's trapped in a Podman container inside a VM. Your host machine, API keys, and source code are safe.
 
+Agents hold a session token that lets them *use* API keys through the proxy but never *read* them. The token is regenerated on every proxy restart, so killing the proxy immediately revokes all agent access.
+
 ### Security Notes
 
-- API keys are stored in **macOS Keychain** and never passed into the VM.
+- API keys are stored in **macOS Keychain** behind **Touch ID**. The biometric `thesystem-keychain` binary is the only path to read keys — plain `security` CLI access is blocked after migration.
+- Keys are loaded into memory **once at proxy startup** via Touch ID. No per-request biometric prompts, no subprocess spawning on the hot path.
+- The **credential endpoint is disabled** — agents can *use* keys through the proxy but no API exists to extract them, even with a valid session token.
+- The **session token** (64-char hex) is regenerated on every proxy restart. Killing the proxy immediately revokes all agent access.
 - The agentauth proxy binds to `0.0.0.0` so Lima containers can reach it via `host.lima.internal`. Restrict external access via macOS firewall.
-- The agentauth proxy auto-starts with `thesystem start` — no manual step required.
 - `~/dev` is mounted **read-only**. Agents write to their own workspace inside the container.
 - In **server mode** with public access, keep the attack surface minimal — the server accepts inbound connections.
 
