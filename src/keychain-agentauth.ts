@@ -201,13 +201,13 @@ async function loadKeysWithBiometric(): Promise<void> {
 
   const providers = Object.keys(PROVIDERS);
   const loaded: string[] = [];
-  const needsMigration: string[] = [];
   const missing: string[] = [];
 
+  // The biometric binary reads from the standard macOS Keychain but gates
+  // access behind Touch ID (LAContext). One fingerprint prompt covers all
+  // reads within the ~5-minute LAContext cache window.
   for (const provider of providers) {
     const svc = `thesystem/${provider}`;
-
-    // Try biometric read
     try {
       const { stdout } = await exec(BIOMETRIC_BIN, ['get', svc, provider]);
       const key = stdout.trim();
@@ -217,22 +217,8 @@ async function loadKeysWithBiometric(): Promise<void> {
         continue;
       }
     } catch {
-      // Not in biometric keychain
+      // Key not found or Touch ID denied
     }
-
-    // Check if key exists in plain keychain (needs migration)
-    try {
-      const { stdout } = await exec('security', [
-        'find-generic-password', '-a', provider, '-s', svc, '-w',
-      ]);
-      if (stdout.trim()) {
-        needsMigration.push(provider);
-        continue;
-      }
-    } catch {
-      // Not in plain keychain either
-    }
-
     missing.push(provider);
   }
 
@@ -240,23 +226,8 @@ async function loadKeysWithBiometric(): Promise<void> {
     console.log(`[thesystem] Loaded ${loaded.length} key(s) via Touch ID: ${loaded.join(', ')}`);
   }
 
-  if (needsMigration.length > 0) {
-    console.warn(
-      `[thesystem] WARNING: ${needsMigration.length} key(s) in PLAIN keychain (no Touch ID): ${needsMigration.join(', ')}\n` +
-      `[thesystem] Run: thesystem keys migrate`
-    );
-  }
-
   if (missing.length > 0) {
     console.log(`[thesystem] No key for: ${missing.join(', ')}`);
-  }
-
-  if (loaded.length === 0 && needsMigration.length > 0) {
-    throw new Error(
-      'No biometric-protected keys found. All keys are in plain Keychain.\n' +
-      'Run: thesystem keys migrate\n' +
-      'Then restart the proxy.'
-    );
   }
 
   if (loaded.length === 0) {

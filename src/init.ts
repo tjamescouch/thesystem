@@ -38,24 +38,14 @@ function promptSecret(rl: readline.Interface, question: string): Promise<string>
   });
 }
 
-async function keychainHasKey(provider: string): Promise<{ biometric: boolean; plain: boolean }> {
+async function keychainHasKey(provider: string): Promise<boolean> {
   const svc = `thesystem/${provider}`;
-
-  // Check biometric keychain
-  if (hasBiometricBin) {
-    try {
-      const { stdout } = await exec(BIOMETRIC_BIN, ['get', svc, provider]);
-      if (stdout.trim()) return { biometric: true, plain: false };
-    } catch {}
-  }
-
-  // Check plain keychain
   try {
     const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
-    if (stdout.trim()) return { biometric: false, plain: true };
-  } catch {}
-
-  return { biometric: false, plain: false };
+    return !!stdout.trim();
+  } catch {
+    return false;
+  }
 }
 
 async function keychainSetKey(provider: string, key: string): Promise<void> {
@@ -120,12 +110,10 @@ export async function runInit(options: InitOptions): Promise<void> {
   let keysStored = 0;
 
   for (const key of keyChecks) {
-    const status = await keychainHasKey(key.keychainName);
+    const inKeychain = await keychainHasKey(key.keychainName);
 
-    if (status.biometric) {
-      console.log(`  ✓ ${key.name} — Touch ID protected`);
-    } else if (status.plain) {
-      console.log(`  ⚠ ${key.name} — PLAIN keychain (run: thesystem keys migrate)`);
+    if (inKeychain) {
+      console.log(`  ✓ ${key.name} — in Keychain`);
     } else if (nonInteractive) {
       console.log(`  - ${key.name} — not set (run: thesystem keys set ${key.keychainName} <key>)`);
     } else {
