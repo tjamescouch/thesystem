@@ -308,7 +308,15 @@ async function main(): Promise<void> {
           try {
             const { stdout } = await exec(biometricBin, ['get', svc, provider]);
             if (stdout.trim()) {
-              console.log(`  [ok]      ${provider} — already Touch ID protected`);
+              // Also clean up any lingering plain keychain entry
+              try {
+                await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
+                // Plain entry exists alongside biometric — delete it
+                await exec('security', ['delete-generic-password', '-a', provider, '-s', svc]);
+                console.log(`  [cleaned] ${provider} — removed lingering plain entry`);
+              } catch {
+                console.log(`  [ok]      ${provider} — Touch ID protected`);
+              }
               alreadyBiometric++;
               continue;
             }
