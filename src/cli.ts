@@ -944,8 +944,9 @@ Usage:
         'export PATH="$HOME/.npm-global/bin:$PATH"',
         // AGENTAUTH_PORT tells agentctl to use proxy mode (skips OAuth token decrypt)
         `export AGENTAUTH_PORT='${proxyPort}'`,
-        `export ANTHROPIC_BASE_URL='http://host.lima.internal:${proxyPort}/anthropic'`,
-        `export ANTHROPIC_API_KEY='${agentctlProxyToken}'`,
+        // AGENTAUTH_TOKEN is the session token the proxy requires for authentication.
+        // agentctl reads this and injects it as API keys for all providers.
+        `export AGENTAUTH_TOKEN='${agentctlProxyToken}'`,
         `export AGENTCHAT_PUBLIC=true`,
         // Use thesystem-gro image instead of default agentchat-agent
         `export AGENTCTL_IMAGE='thesystem-gro:latest'`,
