@@ -1,15 +1,15 @@
 #!/usr/bin/env swift
 
-//  thesystem-keychain — Touch ID-protected keychain access
+//  thesystem-keychain — Touch ID-gated keychain access
 //
 //  Usage:
 //    thesystem-keychain set <service> <account> <value>
 //    thesystem-keychain get <service> <account>
 //    thesystem-keychain delete <service> <account>
 //
-//  Stores secrets in the Data Protection Keychain with biometric
-//  (Touch ID / Apple Watch) gating via kSecAccessControlBiometryAny.
-//  Falls back to device passcode if biometric is unavailable.
+//  Reads require Touch ID verification via LAContext before returning
+//  the secret from the standard macOS Keychain. Writes store to the
+//  standard Keychain (same as `security add-generic-password`).
 //
 //  Build:
 //    swiftc -O -o dist/thesystem-keychain swift/thesystem-keychain.swift \
@@ -26,35 +26,44 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
-func makeAccessControl() -> SecAccessControl {
-    var error: Unmanaged<CFError>?
-    guard let access = SecAccessControlCreateWithFlags(
-        kCFAllocatorDefault,
-        kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
-        [.biometryAny],
-        &error
-    ) else {
-        let msg = error?.takeRetainedValue().localizedDescription ?? "unknown"
-        fail("SecAccessControlCreateWithFlags: \(msg)")
+/// Prompt for Touch ID / Apple Watch / passcode. Blocks until resolved.
+func requireBiometric(reason: String) {
+    let context = LAContext()
+    var error: NSError?
+
+    guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+        fail("biometric unavailable: \(error?.localizedDescription ?? "unknown")")
     }
-    return access
+
+    let semaphore = DispatchSemaphore(value: 0)
+    var authError: Error?
+
+    context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, err in
+        if !success {
+            authError = err
+        }
+        semaphore.signal()
+    }
+
+    semaphore.wait()
+
+    if let err = authError {
+        fail("authentication failed: \(err.localizedDescription)")
+    }
 }
 
-// MARK: - Commands
+// MARK: - Keychain Operations (standard file-based keychain)
 
 func setSecret(service: String, account: String, value: String) {
     guard let data = value.data(using: .utf8) else {
         fail("could not encode value as UTF-8")
     }
 
-    let access = makeAccessControl()
-
-    // Delete any existing item first (update not supported with ACL change)
+    // Delete any existing item first
     let deleteQuery: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
-        kSecUseDataProtectionKeychain as String: true,
     ]
     SecItemDelete(deleteQuery as CFDictionary)
 
@@ -63,8 +72,6 @@ func setSecret(service: String, account: String, value: String) {
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
         kSecValueData as String: data,
-        kSecAttrAccessControl as String: access,
-        kSecUseDataProtectionKeychain as String: true,
     ]
 
     let status = SecItemAdd(addQuery as CFDictionary, nil)
@@ -75,16 +82,14 @@ func setSecret(service: String, account: String, value: String) {
 }
 
 func getSecret(service: String, account: String) {
-    let context = LAContext()
-    context.localizedReason = "thesystem needs your API key"
+    // Require biometric BEFORE reading the secret
+    requireBiometric(reason: "thesystem needs access to your API key")
 
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
         kSecReturnData as String: true,
-        kSecUseAuthenticationContext as String: context,
-        kSecUseDataProtectionKeychain as String: true,
     ]
 
     var result: AnyObject?
@@ -94,9 +99,6 @@ func getSecret(service: String, account: String) {
           let str = String(data: data, encoding: .utf8) else {
         if status == errSecItemNotFound {
             fail("not found: \(service)/\(account)")
-        }
-        if status == errSecAuthFailed || status == errSecUserCanceled {
-            fail("authentication failed or cancelled")
         }
         fail("SecItemCopyMatching failed: \(SecCopyErrorMessageString(status, nil) ?? "code \(status)" as CFString)")
     }
@@ -110,7 +112,6 @@ func deleteSecret(service: String, account: String) {
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
-        kSecUseDataProtectionKeychain as String: true,
     ]
 
     let status = SecItemDelete(query as CFDictionary)
@@ -130,7 +131,7 @@ guard args.count >= 2 else {
       thesystem-keychain get <service> <account>
       thesystem-keychain delete <service> <account>
 
-    Stores secrets with Touch ID protection via Data Protection Keychain.
+    Reads require Touch ID verification before returning secrets.
 
     """, stderr)
     exit(1)
