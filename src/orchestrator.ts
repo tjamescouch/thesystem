@@ -349,7 +349,7 @@ export class Orchestrator {
 
     // Check if already running
     try {
-      await exec('curl', ['-sf', url], { timeout: 2000 });
+      await exec('/usr/bin/curl', ['-sf', url], { timeout: 2000 });
       return; // Already up
     } catch {
       // Not running — auto-start it
@@ -372,7 +372,7 @@ export class Orchestrator {
     while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 500));
       try {
-        await exec('curl', ['-sf', url], { timeout: 1000 });
+        await exec('/usr/bin/curl', ['-sf', url], { timeout: 1000 });
         return; // Up
       } catch {
         // Still starting
@@ -386,7 +386,7 @@ export class Orchestrator {
 
     // Check if already running (relay returns 404 on / — that's fine, means it's up)
     try {
-      const { stdout } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 2000 });
+      const { stdout } = await exec('/usr/bin/curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 2000 });
       if (stdout.trim() !== '000') return; // Any HTTP response means relay is up
     } catch {
       // Not running — auto-start it
@@ -413,7 +413,7 @@ export class Orchestrator {
     while (Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 300));
       try {
-        const { stdout } = await exec('curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 1000 });
+        const { stdout } = await exec('/usr/bin/curl', ['-so', '/dev/null', '-w', '%{http_code}', `http://localhost:${port}/`], { timeout: 1000 });
         if (stdout.trim() !== '000') {
           console.log(`[thesystem] wormhole relay ready on :${port}`);
           return;
@@ -530,7 +530,7 @@ export class Orchestrator {
     while (Date.now() - start < timeoutMs) {
       try {
         // Use host-side check since ports are forwarded
-        await exec('curl', ['-s', '-o', '/dev/null', '-w', '', `http://localhost:${port}`], { timeout: 3000 });
+        await exec('/usr/bin/curl', ['-s', '-o', '/dev/null', '-w', '', `http://localhost:${port}`], { timeout: 3000 });
         return;
       } catch {
         await new Promise(r => setTimeout(r, 1000));
