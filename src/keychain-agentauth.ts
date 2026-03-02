@@ -387,7 +387,7 @@ function hasValidSessionToken(req: http.IncomingMessage, token: string): boolean
  * Routes:
  * - /agentauth/health -> 200 OK
  * - /agentauth/providers -> list of registered providers
- * - /agentauth/credential/<provider> -> Keychain token for git-credential-agentauth
+ * - /agentauth/credential/<provider> -> DISABLED (was exposing raw keys)
  * - /<provider>/* -> upstream API
  *
  * Security:
@@ -441,20 +441,12 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
         return;
       }
 
-      // Git credential endpoint
+      // Git credential endpoint — DISABLED (exposes raw keys to any authenticated caller)
       const credMatch = url.pathname.match(/^\/agentauth\/credential\/(\w+)$/);
       if (credMatch) {
-        const provider = credMatch[1];
-        try {
-          const token = readKeyFromCache(provider);
-          console.log(`[${timestamp()}] ${clientIP} GET /agentauth/credential/${provider} status=200`);
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ token }));
-        } catch {
-          console.warn(`[${timestamp()}] ${clientIP} GET /agentauth/credential/${provider} status=404`);
-          res.writeHead(404, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'no_credential', message: `No key for ${provider} in Keychain` }));
-        }
+        logDenied(clientIP, req.method || 'GET', url.pathname);
+        res.writeHead(403, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'disabled', message: 'Credential endpoint disabled for security' }));
         return;
       }
 
