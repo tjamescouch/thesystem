@@ -945,6 +945,8 @@ Usage:
         `export ANTHROPIC_BASE_URL='http://host.lima.internal:${proxyPort}/anthropic'`,
         `export ANTHROPIC_API_KEY='${agentctlProxyToken}'`,
         `export AGENTCHAT_PUBLIC=true`,
+        // Use thesystem-gro image instead of default agentchat-agent
+        `export AGENTCTL_IMAGE='thesystem-gro:latest'`,
         // Read token from thesystem start if available
         'if [ -f /run/thesystem/agent-token ]; then export CLAUDE_CODE_OAUTH_TOKEN=$(cat /run/thesystem/agent-token); fi',
       ].join('; ');
