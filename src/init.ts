@@ -7,7 +7,7 @@ import { writeDefaultConfig } from './config-loader';
 
 const exec = promisify(execFile);
 
-const BIOMETRIC_BIN = path.join(__dirname, '..', 'dist', 'thesystem-keychain');
+const BIOMETRIC_BIN = path.join(__dirname, 'thesystem-keychain');
 const hasBiometricBin = fs.existsSync(BIOMETRIC_BIN);
 
 /**
@@ -38,41 +38,37 @@ function promptSecret(rl: readline.Interface, question: string): Promise<string>
   });
 }
 
-async function keychainHasKey(provider: string): Promise<boolean> {
+async function keychainHasKey(provider: string): Promise<{ biometric: boolean; plain: boolean }> {
   const svc = `thesystem/${provider}`;
 
-  // Check biometric keychain first
+  // Check biometric keychain
   if (hasBiometricBin) {
     try {
       const { stdout } = await exec(BIOMETRIC_BIN, ['get', svc, provider]);
-      if (stdout.trim()) return true;
-    } catch {
-      // Not in biometric keychain — check legacy
-    }
+      if (stdout.trim()) return { biometric: true, plain: false };
+    } catch {}
   }
 
+  // Check plain keychain
   try {
     const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
-    return !!stdout.trim();
-  } catch {
-    return false;
-  }
+    if (stdout.trim()) return { biometric: false, plain: true };
+  } catch {}
+
+  return { biometric: false, plain: false };
 }
 
 async function keychainSetKey(provider: string, key: string): Promise<void> {
   const svc = `thesystem/${provider}`;
 
-  // Prefer biometric-protected storage when available
-  if (hasBiometricBin) {
-    try {
-      await exec(BIOMETRIC_BIN, ['set', svc, provider, key]);
-      return;
-    } catch {
-      // Fall through to legacy
-    }
+  if (!hasBiometricBin) {
+    throw new Error(
+      'thesystem-keychain binary not found. Keys must be stored with Touch ID protection.\n' +
+      'Reinstall: brew reinstall thesystem'
+    );
   }
 
-  await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
+  await exec(BIOMETRIC_BIN, ['set', svc, provider, key]);
 }
 
 export async function runInit(options: InitOptions): Promise<void> {
@@ -124,10 +120,12 @@ export async function runInit(options: InitOptions): Promise<void> {
   let keysStored = 0;
 
   for (const key of keyChecks) {
-    const inKeychain = await keychainHasKey(key.keychainName);
+    const status = await keychainHasKey(key.keychainName);
 
-    if (inKeychain) {
-      console.log(`  ✓ ${key.name} — in Keychain`);
+    if (status.biometric) {
+      console.log(`  ✓ ${key.name} — Touch ID protected`);
+    } else if (status.plain) {
+      console.log(`  ⚠ ${key.name} — PLAIN keychain (run: thesystem keys migrate)`);
     } else if (nonInteractive) {
       console.log(`  - ${key.name} — not set (run: thesystem keys set ${key.keychainName} <key>)`);
     } else {
@@ -145,7 +143,7 @@ export async function runInit(options: InitOptions): Promise<void> {
       if (value) {
         await keychainSetKey(key.keychainName, value);
         keysStored++;
-        console.log(`    ✓ Stored in macOS Keychain`);
+        console.log(`    ✓ Stored with Touch ID protection`);
       } else {
         console.log(`    → Skipped (add later: thesystem keys set ${key.keychainName} <key>)`);
       }

@@ -228,6 +228,8 @@ async function main(): Promise<void> {
 
     case 'keys': {
       const sub = args[1] || 'help';
+      const biometricBin = path.join(__dirname, 'thesystem-keychain');
+
       if (sub === 'set') {
         const provider = args[2];
         const key = args[3];
@@ -235,47 +237,125 @@ async function main(): Promise<void> {
           console.error('Usage: thesystem keys set <provider> <key>');
           process.exit(1);
         }
+        if (!fs.existsSync(biometricBin)) {
+          console.error('[thesystem] thesystem-keychain binary not found. Reinstall: brew reinstall thesystem');
+          process.exit(1);
+        }
         const svc = `thesystem/${provider}`;
-        // Try biometric-protected storage first (Touch ID)
-        const biometricBin = path.join(__dirname, 'thesystem-keychain');
-        if (fs.existsSync(biometricBin)) {
-          try {
-            await exec(biometricBin, ['set', svc, provider, key]);
-            console.log(`[thesystem] Stored key with Touch ID protection service="${svc}"`);
-          } catch (err: any) {
-            console.warn(`[thesystem] Biometric store failed (${err.message}), using plain Keychain`);
-            await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
-            console.log(`[thesystem] Stored key in macOS Keychain service="${svc}" account="${provider}"`);
-          }
-        } else {
-          await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
-          console.log(`[thesystem] Stored key in macOS Keychain service="${svc}" account="${provider}"`);
+        try {
+          await exec(biometricBin, ['set', svc, provider, key]);
+          console.log(`[thesystem] Stored key with Touch ID protection service="${svc}"`);
+        } catch (err: any) {
+          console.error(`[thesystem] Failed to store key: ${err.message}`);
+          process.exit(1);
         }
         break;
       }
+
       if (sub === 'get') {
         const provider = args[2];
         if (!provider) {
           console.error('Usage: thesystem keys get <provider>');
           process.exit(1);
         }
-        const svc = `thesystem/${provider}`;
-        // Try biometric-protected keychain first
-        const getBiometricBin = path.join(__dirname, 'thesystem-keychain');
-        if (fs.existsSync(getBiometricBin)) {
-          try {
-            const { stdout } = await exec(getBiometricBin, ['get', svc, provider]);
-            process.stdout.write(stdout);
-            break;
-          } catch {
-            // Fall through to plain keychain
-          }
+        if (!fs.existsSync(biometricBin)) {
+          console.error('[thesystem] thesystem-keychain binary not found. Reinstall: brew reinstall thesystem');
+          process.exit(1);
         }
-        const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
-        process.stdout.write(stdout);
+        const svc = `thesystem/${provider}`;
+        try {
+          const { stdout } = await exec(biometricBin, ['get', svc, provider]);
+          if (!stdout.trim()) {
+            // Check if in plain keychain (needs migration)
+            try {
+              const { stdout: plain } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
+              if (plain.trim()) {
+                console.error(`[thesystem] Key for "${provider}" is in PLAIN keychain (no Touch ID).`);
+                console.error('[thesystem] Run: thesystem keys migrate');
+                process.exit(1);
+              }
+            } catch {}
+            console.error(`[thesystem] No key found for "${provider}".`);
+            process.exit(1);
+          }
+          process.stdout.write(stdout);
+        } catch (err: any) {
+          console.error(`[thesystem] Failed to read key: ${err.message}`);
+          process.exit(1);
+        }
         break;
       }
-      console.error('Usage: thesystem keys <set|get> ...');
+
+      if (sub === 'migrate') {
+        if (!fs.existsSync(biometricBin)) {
+          console.error('[thesystem] thesystem-keychain binary not found. Reinstall: brew reinstall thesystem');
+          process.exit(1);
+        }
+
+        const providers = [
+          'anthropic', 'openai', 'grok', 'xai', 'google', 'mistral', 'groq', 'deepseek',
+        ];
+
+        console.log('[thesystem] Migrating keys to Touch ID protection...\n');
+        let migrated = 0;
+        let alreadyBiometric = 0;
+        let notFound = 0;
+
+        for (const provider of providers) {
+          const svc = `thesystem/${provider}`;
+
+          // Check if already in biometric keychain
+          try {
+            const { stdout } = await exec(biometricBin, ['get', svc, provider]);
+            if (stdout.trim()) {
+              console.log(`  [ok]      ${provider} — already Touch ID protected`);
+              alreadyBiometric++;
+              continue;
+            }
+          } catch {}
+
+          // Read from plain keychain
+          let plainKey: string;
+          try {
+            const { stdout } = await exec('security', [
+              'find-generic-password', '-a', provider, '-s', svc, '-w',
+            ]);
+            plainKey = stdout.trim();
+            if (!plainKey) throw new Error('empty');
+          } catch {
+            console.log(`  [skip]    ${provider} — not found`);
+            notFound++;
+            continue;
+          }
+
+          // Store via biometric binary
+          try {
+            await exec(biometricBin, ['set', svc, provider, plainKey]);
+            console.log(`  [migrated] ${provider} — stored with Touch ID`);
+          } catch (err: any) {
+            console.error(`  [FAIL]    ${provider} — ${err.message}`);
+            continue;
+          }
+
+          // Delete the plain keychain entry
+          try {
+            await exec('security', ['delete-generic-password', '-a', provider, '-s', svc]);
+            console.log(`  [cleaned]  ${provider} — removed plain entry`);
+          } catch {
+            console.warn(`  [warn]    ${provider} — could not remove plain entry (remove manually)`);
+          }
+
+          migrated++;
+        }
+
+        console.log(`\n[thesystem] Done: ${migrated} migrated, ${alreadyBiometric} already protected, ${notFound} not found.`);
+        if (migrated > 0) {
+          console.log('[thesystem] Restart the proxy to use biometric-protected keys.');
+        }
+        break;
+      }
+
+      console.error('Usage: thesystem keys <set|get|migrate> ...');
       process.exit(1);
     }
 

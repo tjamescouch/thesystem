@@ -171,13 +171,113 @@ export const PROVIDERS: Record<string, ProviderConfig> = {
 };
 
 // ---------------------------------------------------------------------------
-// Keychain — tries biometric helper first, falls back to security CLI
+// Keychain — biometric (Touch ID) key access via thesystem-keychain binary
 // ---------------------------------------------------------------------------
 import * as path from 'path';
 import * as fs from 'fs';
 
 const BIOMETRIC_BIN = path.join(__dirname, 'thesystem-keychain');
 const hasBiometricBin = fs.existsSync(BIOMETRIC_BIN);
+
+// ---------------------------------------------------------------------------
+// In-memory key cache — populated once at startup via Touch ID
+// ---------------------------------------------------------------------------
+const keyCache = new Map<string, string>();
+
+/**
+ * Load all provider keys into memory using the biometric binary.
+ * macOS LAContext caches Touch ID auth for ~5 minutes, so reading
+ * multiple providers sequentially after one prompt should not re-prompt.
+ *
+ * Throws if the biometric binary is missing or no keys could be loaded.
+ */
+async function loadKeysWithBiometric(): Promise<void> {
+  if (!hasBiometricBin) {
+    throw new Error(
+      'thesystem-keychain binary not found. Cannot start proxy without biometric protection.\n' +
+      'Reinstall: brew reinstall thesystem'
+    );
+  }
+
+  const providers = Object.keys(PROVIDERS);
+  const loaded: string[] = [];
+  const needsMigration: string[] = [];
+  const missing: string[] = [];
+
+  for (const provider of providers) {
+    const svc = `thesystem/${provider}`;
+
+    // Try biometric read
+    try {
+      const { stdout } = await exec(BIOMETRIC_BIN, ['get', svc, provider]);
+      const key = stdout.trim();
+      if (key) {
+        keyCache.set(provider, key);
+        loaded.push(provider);
+        continue;
+      }
+    } catch {
+      // Not in biometric keychain
+    }
+
+    // Check if key exists in plain keychain (needs migration)
+    try {
+      const { stdout } = await exec('security', [
+        'find-generic-password', '-a', provider, '-s', svc, '-w',
+      ]);
+      if (stdout.trim()) {
+        needsMigration.push(provider);
+        continue;
+      }
+    } catch {
+      // Not in plain keychain either
+    }
+
+    missing.push(provider);
+  }
+
+  if (loaded.length > 0) {
+    console.log(`[thesystem] Loaded ${loaded.length} key(s) via Touch ID: ${loaded.join(', ')}`);
+  }
+
+  if (needsMigration.length > 0) {
+    console.warn(
+      `[thesystem] WARNING: ${needsMigration.length} key(s) in PLAIN keychain (no Touch ID): ${needsMigration.join(', ')}\n` +
+      `[thesystem] Run: thesystem keys migrate`
+    );
+  }
+
+  if (missing.length > 0) {
+    console.log(`[thesystem] No key for: ${missing.join(', ')}`);
+  }
+
+  if (loaded.length === 0 && needsMigration.length > 0) {
+    throw new Error(
+      'No biometric-protected keys found. All keys are in plain Keychain.\n' +
+      'Run: thesystem keys migrate\n' +
+      'Then restart the proxy.'
+    );
+  }
+
+  if (loaded.length === 0) {
+    throw new Error(
+      'No API keys found in Keychain. Store at least one key:\n' +
+      '  thesystem keys set anthropic <your-key>'
+    );
+  }
+}
+
+/**
+ * Read a provider key from the in-memory cache (populated at startup).
+ * Synchronous — no subprocess, no Touch ID prompt per request.
+ */
+function readKeyFromCache(provider: string): string {
+  const key = keyCache.get(provider);
+  if (!key) {
+    throw new Error(`No key cached for "${provider}". Run: thesystem keys set ${provider} <key>`);
+  }
+  return key;
+}
 
 // ---------------------------------------------------------------------------
 // Session token — authenticates proxy clients
@@ -201,27 +301,6 @@ export function readSessionToken(): string | null {
   } catch {
     return null;
   }
-}
-
-async function readKeyFromKeychain(provider: string): Promise<string> {
-  const svc = `thesystem/${provider}`;
-
-  // Try biometric-protected keychain first
-  if (hasBiometricBin) {
-    try {
-      const { stdout } = await exec(BIOMETRIC_BIN, ['get', svc, provider]);
-      const key = stdout.trim();
-      if (key) return key;
-    } catch {
-      // Not stored with biometric — fall through to legacy
-    }
-  }
-
-  // Fallback: plain macOS Keychain (no biometric)
-  const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
-  const key = stdout.trim();
-  if (!key) throw new Error(`Empty key for provider ${provider}`);
-  return key;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +336,7 @@ function proxyRequest(
     }
 
     try {
-      const apiKey = await readKeyFromKeychain(provider);
+      const apiKey = readKeyFromCache(provider);
 
       const headers: Record<string, string> = {};
       if (config.authStyle === 'bearer') {
@@ -346,6 +425,10 @@ function hasValidSessionToken(req: http.IncomingMessage, token: string): boolean
  * - All requests logged with timestamp, source IP, provider, model, status, duration
  */
 export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
+  // Load all API keys via Touch ID (single biometric prompt at startup)
+  console.log('[thesystem] Loading API keys (Touch ID required)...');
+  await loadKeysWithBiometric();
+
   // Generate session token — all clients must present this to use the proxy
   const sessionToken = generateSessionToken();
   writeSessionToken(sessionToken);
@@ -392,7 +475,7 @@ export async function startAgentAuthProxy(opts: StartOpts): Promise<void> {
       if (credMatch) {
         const provider = credMatch[1];
         try {
-          const token = await readKeyFromKeychain(provider);
+          const token = readKeyFromCache(provider);
           console.log(`[${timestamp()}] ${clientIP} GET /agentauth/credential/${provider} status=200`);
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ token }));
