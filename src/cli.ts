@@ -942,6 +942,8 @@ Usage:
       try { agentctlProxyToken = fs.readFileSync(agentctlTokenFile, 'utf-8').trim() || 'proxy-managed'; } catch {}
       const envSetup = [
         'export PATH="$HOME/.npm-global/bin:$PATH"',
+        // AGENTAUTH_PORT tells agentctl to use proxy mode (skips OAuth token decrypt)
+        `export AGENTAUTH_PORT='${proxyPort}'`,
         `export ANTHROPIC_BASE_URL='http://host.lima.internal:${proxyPort}/anthropic'`,
         `export ANTHROPIC_API_KEY='${agentctlProxyToken}'`,
         `export AGENTCHAT_PUBLIC=true`,
