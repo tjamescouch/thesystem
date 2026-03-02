@@ -176,7 +176,7 @@ export const PROVIDERS: Record<string, ProviderConfig> = {
 import * as path from 'path';
 import * as fs from 'fs';
 
-const BIOMETRIC_BIN = path.join(__dirname, '..', 'dist', 'thesystem-keychain');
+const BIOMETRIC_BIN = path.join(__dirname, 'thesystem-keychain');
 const hasBiometricBin = fs.existsSync(BIOMETRIC_BIN);
 
 // ---------------------------------------------------------------------------

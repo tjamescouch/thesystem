@@ -236,10 +236,21 @@ async function main(): Promise<void> {
           process.exit(1);
         }
         const svc = `thesystem/${provider}`;
-        // macOS Keychain (generic password): account=provider, service=thesystem/<provider>
-        // -U updates existing
-        await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
-        console.log(`[thesystem] Stored key in macOS Keychain service="${svc}" account="${provider}"`);
+        // Try biometric-protected storage first (Touch ID)
+        const biometricBin = path.join(__dirname, 'thesystem-keychain');
+        if (fs.existsSync(biometricBin)) {
+          try {
+            await exec(biometricBin, ['set', svc, provider, key]);
+            console.log(`[thesystem] Stored key with Touch ID protection service="${svc}"`);
+          } catch (err: any) {
+            console.warn(`[thesystem] Biometric store failed (${err.message}), using plain Keychain`);
+            await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
+            console.log(`[thesystem] Stored key in macOS Keychain service="${svc}" account="${provider}"`);
+          }
+        } else {
+          await exec('security', ['add-generic-password', '-a', provider, '-s', svc, '-w', key, '-U']);
+          console.log(`[thesystem] Stored key in macOS Keychain service="${svc}" account="${provider}"`);
+        }
         break;
       }
       if (sub === 'get') {
@@ -249,6 +260,17 @@ async function main(): Promise<void> {
           process.exit(1);
         }
         const svc = `thesystem/${provider}`;
+        // Try biometric-protected keychain first
+        const getBiometricBin = path.join(__dirname, 'thesystem-keychain');
+        if (fs.existsSync(getBiometricBin)) {
+          try {
+            const { stdout } = await exec(getBiometricBin, ['get', svc, provider]);
+            process.stdout.write(stdout);
+            break;
+          } catch {
+            // Fall through to plain keychain
+          }
+        }
         const { stdout } = await exec('security', ['find-generic-password', '-a', provider, '-s', svc, '-w']);
         process.stdout.write(stdout);
         break;
