@@ -613,29 +613,37 @@ export class Orchestrator {
     ];
 
     const services = [
-      { name: 'agentchat-server', grep: 'agentchat serve' },
-      { name: 'agentchat-dashboard', grep: 'dashboard/server' },
-      { name: 'theswarm', grep: 'agentswarm start' },
+      { name: 'agentchat-server', grep: 'agentchat serve', port: this.config?.server.port ?? 6667 },
+      { name: 'agentchat-dashboard', grep: null, port: this.config?.server.dashboard ?? 3000 },
+      { name: 'theswarm', grep: 'agentswarm start', port: null },
     ];
 
     for (const svc of services) {
       try {
-        const pid = await this.shell(`pgrep -f "${svc.grep}" | head -1`);
-        const port = svc.name === 'agentchat-server' ? (this.config?.server.port ?? 6667)
-          : svc.name === 'agentchat-dashboard' ? (this.config?.server.dashboard ?? 3000)
-          : null;
+        let pid: string | null = null;
+
+        if (svc.port) {
+          // Detect by listening port — works even when process name doesn't match grep
+          const ssOut = await this.shell(`ss -tlnp sport = :${svc.port} 2>/dev/null | grep LISTEN`).catch(() => '');
+          const pidMatch = ssOut.match(/pid=(\d+)/);
+          pid = pidMatch ? pidMatch[1] : null;
+        }
+
+        if (!pid && svc.grep) {
+          pid = await this.shell(`pgrep -f "${svc.grep}" | head -1`).catch(() => '');
+        }
 
         components.push({
           name: svc.name,
           version: '-',
-          port,
+          port: svc.port,
           pid: pid ? parseInt(pid, 10) : null,
           status: pid ? 'running' : 'stopped',
           restarts: 0,
         });
       } catch {
         components.push({
-          name: svc.name, version: '-', port: null, pid: null, status: 'stopped', restarts: 0,
+          name: svc.name, version: '-', port: svc.port, pid: null, status: 'stopped', restarts: 0,
         });
       }
     }
