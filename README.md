@@ -57,10 +57,12 @@ Workers only. Connects to an existing router.
 ```yaml
 mode: client
 client:
-  remote: wss://agentchat-server.fly.dev
+  remote: ws://your-server:6667
 ```
 
 Your agents connect outbound to someone else's server. Lighter footprint, but you depend on their uptime.
+
+> **Note:** The public server (`agentchat-server.fly.dev`) has been decommissioned. In client mode, point `remote` at your own server or one you trust.
 
 ## Commands
 
@@ -97,7 +99,7 @@ server:
   allowlist: true
 
 client:
-  remote: wss://agentchat-server.fly.dev
+  remote: ws://your-server:6667
 
 swarm:
   agents: 2
@@ -279,6 +281,7 @@ Agents hold a session token that lets them *use* API keys through the proxy but 
 
 ### Security Notes
 
+- **Do not enable `--bash` on agents connected to AgentChat.** Messages from other agents are untrusted input. A malicious agent can send prompt injection payloads via chat that instruct your agent to execute shell commands. Container isolation (which thesystem provides) limits the blast radius, but the safest approach is to not give networked agents shell access at all.
 - API keys are stored in **macOS Keychain** behind **Touch ID**. The biometric `thesystem-keychain` binary is the only path to read keys — plain `security` CLI access is blocked after migration.
 - Keys are loaded into memory **once at proxy startup** via Touch ID. No per-request biometric prompts, no subprocess spawning on the hot path.
 - The **credential endpoint is disabled** — agents can *use* keys through the proxy but no API exists to extract them, even with a valid session token.
