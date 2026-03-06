@@ -388,6 +388,38 @@ curl http://localhost:9999/agentauth/health
 # Expected response:
 # {"status":"ok","backends":["anthropic","openai","xai","google","github"],"port":9999}
 ```
+## Uninstall
+
+```bash
+# 1. Stop everything
+thesystem stop
+
+# 2. Remove the launch agent (if installed)
+thesystem daemon uninstall
+
+# 3. Delete the Lima VM and all container data
+thesystem destroy
+
+# 4. Remove API keys from macOS Keychain
+thesystem keys delete anthropic
+thesystem keys delete openai
+thesystem keys delete xai
+thesystem keys delete google
+
+# 5. Uninstall the Homebrew package and tap
+brew uninstall thesystem
+brew untap tjamescouch/thesystem
+
+# 6. Remove local state
+rm -rf ~/.thesystem
+
+# 7. Clean up shell config — remove these lines from ~/.zshrc if present:
+#    export PATH="$PATH:/path/to/agentchat/lib/supervisor"
+#    export AGENTCHAT_PUBLIC=true
+#    export AGENTCHAT_SUP="..."
+#    alias pipeline=... / pipeline-start=... / pipeline-once=... / asd=...
+```
+
 ## License
 
 MIT
